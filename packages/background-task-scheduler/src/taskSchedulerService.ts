@@ -11,18 +11,13 @@ import { nameof } from "@twin.org/nameof";
 import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions";
 
 /**
- * Class for performing task operations in entity storage.
+ * Class for scheduling tasks.
  */
-export class TaskSchedulerComponent implements ITaskSchedulerComponent {
-	/**
-	 * The namespace supported by the task scheduler.
-	 */
-	public static readonly NAMESPACE: string = "task-scheduler";
-
+export class TaskSchedulerService implements ITaskSchedulerComponent {
 	/**
 	 * Runtime name for the class.
 	 */
-	public readonly CLASS_NAME: string = nameof<TaskSchedulerComponent>();
+	public readonly CLASS_NAME: string = nameof<TaskSchedulerService>();
 
 	/**
 	 * The logger for the task connector.
