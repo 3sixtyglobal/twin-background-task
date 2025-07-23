@@ -107,7 +107,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			}
 		});
 
-		this.startTimer();
+		await this.startTimer();
 	}
 
 	/**
@@ -181,8 +181,11 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * Start the timer for running scheduled tasks.
 	 * @internal
 	 */
-	private startTimer(): void {
+	private async startTimer(): Promise<void> {
 		if (Is.empty(this._timer)) {
+			// Trigger immediately to catch up on any missed tasks
+			await this.triggerScheduledTasks();
+			// Set the timer to run at the specified interval
 			this._timer = setInterval(async () => this.triggerScheduledTasks(), this._tickInterval);
 		}
 	}
