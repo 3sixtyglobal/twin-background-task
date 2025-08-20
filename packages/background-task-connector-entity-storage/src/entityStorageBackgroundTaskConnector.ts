@@ -8,6 +8,7 @@ import {
 } from "@twin.org/background-task-models";
 import {
 	BaseError,
+	ComponentFactory,
 	Converter,
 	GeneralError,
 	Guards,
@@ -31,7 +32,7 @@ import {
 	EntityStorageConnectorFactory,
 	type IEntityStorageConnector
 } from "@twin.org/entity-storage-models";
-import { type ILoggingConnector, LoggingConnectorFactory } from "@twin.org/logging-models";
+import type { ILoggingComponent } from "@twin.org/logging-models";
 import { ModuleHelper } from "@twin.org/modules";
 import { nameof } from "@twin.org/nameof";
 import type { BackgroundTask } from "./entities/backgroundTask";
@@ -88,10 +89,10 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	private readonly _backgroundTaskEntityStorageConnector: IEntityStorageConnector<BackgroundTask>;
 
 	/**
-	 * The logger for the background task connector.
+	 * The logger component for the background task.
 	 * @internal
 	 */
-	private readonly _logging?: ILoggingConnector;
+	private readonly _logging?: ILoggingComponent;
 
 	/**
 	 * The current task being processed.
@@ -148,7 +149,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		this._backgroundTaskEntityStorageConnector = EntityStorageConnectorFactory.get(
 			options?.backgroundTaskEntityStorageType ?? "background-task"
 		);
-		this._logging = LoggingConnectorFactory.getIfExists(options?.loggingConnectorType ?? "logging");
+		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
 		this._taskHandlers = {};
 		this._currentTasks = {};
 		this._started = false;
@@ -213,10 +214,10 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	/**
 	 * The component needs to be started when the node is initialized.
 	 * @param nodeIdentity The identity of the node starting the component.
-	 * @param nodeLoggingConnectorType The node logging connector type, defaults to "node-logging".
+	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async start(nodeIdentity: string, nodeLoggingConnectorType?: string): Promise<void> {
+	public async start(nodeIdentity: string, nodeLoggingComponentType?: string): Promise<void> {
 		this._started = true;
 
 		await this.cleanupRetained();
@@ -230,10 +231,10 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	/**
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeIdentity The identity of the node stopping the component.
-	 * @param nodeLoggingConnectorType The node logging connector type, defaults to "node-logging".
+	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async stop(nodeIdentity: string, nodeLoggingConnectorType?: string): Promise<void> {
+	public async stop(nodeIdentity: string, nodeLoggingComponentType?: string): Promise<void> {
 		this._started = false;
 
 		const types = Object.keys(this._taskHandlers);
@@ -776,12 +777,12 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			delete task.error;
 		} catch (err) {
 			// Task handler threw an error, so set the error which will trigger a retry if needed.
-			taskError = BaseError.fromError(err).toJsonObject();
+			taskError = BaseError.fromError(err).toJsonObject(true);
 			if (
 				taskError.message === `${StringHelper.camelCase(nameof(ModuleHelper))}.resultError` &&
-				!Is.empty(taskError.inner)
+				!Is.empty(taskError.cause)
 			) {
-				taskError = BaseError.fromError(taskError.inner).toJsonObject();
+				taskError = BaseError.fromError(taskError.cause).toJsonObject(true);
 			}
 		}
 

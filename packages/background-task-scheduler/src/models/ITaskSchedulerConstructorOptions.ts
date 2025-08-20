@@ -7,10 +7,10 @@ import type { ITaskSchedulerConfig } from "./ITaskSchedulerConfig";
  */
 export interface ITaskSchedulerConstructorOptions {
 	/**
-	 * The logging connector type.
+	 * The logging component type.
 	 * @default logging
 	 */
-	loggingConnectorType?: string;
+	loggingComponentType?: string;
 
 	/**
 	 * The configuration for the task scheduler.

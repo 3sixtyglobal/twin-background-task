@@ -5,8 +5,8 @@ import type {
 	IScheduledTaskTime,
 	ITaskSchedulerComponent
 } from "@twin.org/background-task-models";
-import { BaseError, Is } from "@twin.org/core";
-import { type ILoggingConnector, LoggingConnectorFactory } from "@twin.org/logging-models";
+import { BaseError, ComponentFactory, Is } from "@twin.org/core";
+import type { ILoggingComponent } from "@twin.org/logging-models";
 import { nameof } from "@twin.org/nameof";
 import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions";
 
@@ -20,10 +20,10 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	public readonly CLASS_NAME: string = nameof<TaskSchedulerService>();
 
 	/**
-	 * The logger for the task connector.
+	 * The logger for the task service.
 	 * @internal
 	 */
-	private readonly _logging?: ILoggingConnector;
+	private readonly _logging?: ILoggingComponent;
 
 	/**
 	 * The interval in milliseconds at which the tasks are checked.
@@ -53,7 +53,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * @param options The options for the scheduler.
 	 */
 	constructor(options?: ITaskSchedulerConstructorOptions) {
-		this._logging = LoggingConnectorFactory.getIfExists(options?.loggingConnectorType ?? "logging");
+		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
 		this._tasks = {};
 		this._tickInterval = options?.config?.overrideInterval ?? 60 * 1000; // Default to 1 minute
 	}
@@ -61,13 +61,13 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	/**
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeIdentity The identity of the node stopping the component.
-	 * @param nodeLoggingConnectorType The node logging connector type, defaults to "node-logging".
+	 * @param nodeLoggingComponentType The node logging component type.
 	 * @param componentState A persistent state which can be modified by the method.
 	 * @returns Nothing.
 	 */
 	public async stop(
 		nodeIdentity: string,
-		nodeLoggingConnectorType: string | undefined,
+		nodeLoggingComponentType: string | undefined,
 		componentState?: {
 			[id: string]: unknown;
 		}
