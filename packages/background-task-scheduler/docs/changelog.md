@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.2-next.5](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.2-next.4...background-task-scheduler-v0.0.2-next.5) (2025-08-20)
+
+
+### Features
+
+* update framework core ([a068098](https://github.com/twinfoundation/background-task/commit/a0680983d7923a1bfb980a67879019bb870ccc5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.2-next.4 to 0.0.2-next.5
+
 ## [0.0.2-next.4](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.2-next.3...background-task-scheduler-v0.0.2-next.4) (2025-07-23)
 
 
