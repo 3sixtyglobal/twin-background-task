@@ -62,15 +62,11 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeIdentity The identity of the node stopping the component.
 	 * @param nodeLoggingComponentType The node logging component type.
-	 * @param componentState A persistent state which can be modified by the method.
 	 * @returns Nothing.
 	 */
 	public async stop(
 		nodeIdentity: string,
-		nodeLoggingComponentType: string | undefined,
-		componentState?: {
-			[id: string]: unknown;
-		}
+		nodeLoggingComponentType: string | undefined
 	): Promise<void> {
 		this.stopTimer();
 	}
