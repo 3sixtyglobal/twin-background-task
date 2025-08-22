@@ -1,5 +1,19 @@
 # @twin.org/background-task-connector-entity-storage - Changelog
 
+## [0.0.2-next.6](https://github.com/twinfoundation/background-task/compare/background-task-connector-entity-storage-v0.0.2-next.5...background-task-connector-entity-storage-v0.0.2-next.6) (2025-08-22)
+
+
+### Features
+
+* remove unused parameters ([1028b3c](https://github.com/twinfoundation/background-task/commit/1028b3cc147c25da22a8ba8d7207acfb34f89cdb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.2-next.5 to 0.0.2-next.6
+
 ## [0.0.2-next.5](https://github.com/twinfoundation/background-task/compare/background-task-connector-entity-storage-v0.0.2-next.4...background-task-connector-entity-storage-v0.0.2-next.5) (2025-08-20)
 
 
