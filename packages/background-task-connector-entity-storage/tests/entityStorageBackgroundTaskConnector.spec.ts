@@ -26,7 +26,6 @@ async function waitForStatus(status: string, itemIndex: number = 0): Promise<voi
 		}
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
-	// eslint-disable-next-line no-restricted-syntax
 	throw new Error("Timeout waiting for status");
 }
 
@@ -41,7 +40,6 @@ async function waitForError(itemIndex: number = 0): Promise<void> {
 		}
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
-	// eslint-disable-next-line no-restricted-syntax
 	throw new Error("Timeout waiting for error");
 }
 

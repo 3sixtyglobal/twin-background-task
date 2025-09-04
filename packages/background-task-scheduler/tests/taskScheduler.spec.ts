@@ -170,7 +170,6 @@ describe("TaskSchedulerService", () => {
 		});
 
 		await taskScheduler.addTask("testTask", [{ nextTriggerTime: Date.now() + 500 }], async () => {
-			// eslint-disable-next-line no-restricted-syntax
 			throw new Error("Test error");
 		});
 
