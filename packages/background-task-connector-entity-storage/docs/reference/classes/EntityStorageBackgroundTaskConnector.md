@@ -50,13 +50,13 @@ Runtime name for the class.
 
 ### start()
 
-> **start**(`nodeIdentity`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
+> **start**(`nodeIdentity?`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
 
 The component needs to be started when the node is initialized.
 
 #### Parameters
 
-##### nodeIdentity
+##### nodeIdentity?
 
 `string`
 
@@ -82,13 +82,13 @@ Nothing.
 
 ### stop()
 
-> **stop**(`nodeIdentity`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
+> **stop**(`nodeIdentity?`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
 
 The component needs to be stopped when the node is closed.
 
 #### Parameters
 
-##### nodeIdentity
+##### nodeIdentity?
 
 `string`
 

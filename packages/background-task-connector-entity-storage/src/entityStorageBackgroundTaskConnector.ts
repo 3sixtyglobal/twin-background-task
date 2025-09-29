@@ -17,7 +17,6 @@ import {
 	type IValidationFailure,
 	ObjectHelper,
 	RandomHelper,
-	StringHelper,
 	Urn,
 	Validation
 } from "@twin.org/core";
@@ -34,7 +33,7 @@ import {
 } from "@twin.org/entity-storage-models";
 import type { ILoggingComponent } from "@twin.org/logging-models";
 import { ModuleHelper } from "@twin.org/modules";
-import { nameof } from "@twin.org/nameof";
+import { nameof, nameofCamelCase } from "@twin.org/nameof";
 import type { BackgroundTask } from "./entities/backgroundTask";
 import type { IEntityStorageBackgroundTaskConnectorConstructorOptions } from "./models/IEntityStorageBackgroundTaskConnectorConstructorOptions";
 
@@ -217,14 +216,15 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async start(nodeIdentity: string, nodeLoggingComponentType?: string): Promise<void> {
-		this._started = true;
+	public async start(nodeIdentity?: string, nodeLoggingComponentType?: string): Promise<void> {
+		if (!this._started) {
+			this._started = true;
+			await this.cleanupRetained();
 
-		await this.cleanupRetained();
-
-		const types = Object.keys(this._taskHandlers);
-		for (const type of types) {
-			await this.processTasks(type);
+			const types = Object.keys(this._taskHandlers);
+			for (const type of types) {
+				await this.processTasks(type);
+			}
 		}
 	}
 
@@ -234,14 +234,16 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async stop(nodeIdentity: string, nodeLoggingComponentType?: string): Promise<void> {
-		this._started = false;
+	public async stop(nodeIdentity?: string, nodeLoggingComponentType?: string): Promise<void> {
+		if (this._started) {
+			this._started = false;
 
-		const types = Object.keys(this._taskHandlers);
-		for (const type of types) {
-			if (this._currentTasks[type]?.waitTimerId) {
-				clearTimeout(this._currentTasks[type].waitTimerId);
-				delete this._currentTasks[type].waitTimerId;
+			const types = Object.keys(this._taskHandlers);
+			for (const type of types) {
+				if (this._currentTasks[type]?.waitTimerId) {
+					clearTimeout(this._currentTasks[type].waitTimerId);
+					delete this._currentTasks[type].waitTimerId;
+				}
 			}
 		}
 	}
@@ -705,7 +707,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 								await this._backgroundTaskEntityStorageConnector.set(nextTask);
 
 								const stateChangeCallback = this._taskHandlers[nextTask.type].stateChangeCallback;
-								if (!Is.empty(stateChangeCallback)) {
+								if (Is.function(stateChangeCallback)) {
 									await stateChangeCallback(nextTask);
 								}
 
@@ -779,7 +781,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			// Task handler threw an error, so set the error which will trigger a retry if needed.
 			taskError = BaseError.fromError(err).toJsonObject(true);
 			if (
-				taskError.message === `${StringHelper.camelCase(nameof(ModuleHelper))}.resultError` &&
+				taskError.message === `${nameofCamelCase(ModuleHelper)}.resultError` &&
 				!Is.empty(taskError.cause)
 			) {
 				taskError = BaseError.fromError(taskError.cause).toJsonObject(true);
