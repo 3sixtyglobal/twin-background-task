@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.2-next.8](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.2-next.7...background-task-scheduler-v0.0.2-next.8) (2025-09-29)
+
+
+### Features
+
+* update IComponent signatures ([e1a79bc](https://github.com/twinfoundation/background-task/commit/e1a79bc4dd813435c56e376f231a4b4ecd2276bf))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.2-next.7 to 0.0.2-next.8
+
 ## [0.0.2-next.7](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.2-next.6...background-task-scheduler-v0.0.2-next.7) (2025-08-29)
 
 
