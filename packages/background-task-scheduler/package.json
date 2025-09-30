@@ -70,5 +70,17 @@
 		"dist/types",
 		"locales",
 		"docs"
+	],
+	"keywords": [
+		"twin",
+		"trade",
+		"iota",
+		"framework",
+		"blockchain",
+		"background-task",
+		"tasks",
+		"scheduling",
+		"jobs",
+		"async"
 	]
 }
