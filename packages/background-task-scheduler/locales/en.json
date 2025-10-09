@@ -1,11 +1,11 @@
 {
 	"error": {
-		"taskScheduler": {
+		"taskSchedulerService": {
 			"taskFailed": "Task with id \"{id}\" failed to run"
 		}
 	},
 	"info": {
-		"taskScheduler": {
+		"taskSchedulerService": {
 			"taskAdded": "Task with id \"{id}\" added",
 			"taskRemoved": "Task with id \"{id}\" removed",
 			"taskTriggered": "Task with id \"{id}\" triggered at time \"{time}\""

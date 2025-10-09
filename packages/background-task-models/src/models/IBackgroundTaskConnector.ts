@@ -86,7 +86,7 @@ export interface IBackgroundTaskConnector extends IComponent {
 	 * @param sortProperty The property to sort by, defaults to dateCreated.
 	 * @param sortDirection The order to sort by, defaults to ascending.
 	 * @param cursor The cursor to get the next page of tasks.
-	 * @param pageSize The maximum number of entities in a page.
+	 * @param limit Limit the number of entities to return.
 	 * @returns The list of tasks.
 	 */
 	query(
@@ -95,7 +95,7 @@ export interface IBackgroundTaskConnector extends IComponent {
 		sortProperty?: "dateCreated" | "dateModified" | "dateCompleted" | "status",
 		sortDirection?: SortDirection,
 		cursor?: string,
-		pageSize?: number
+		limit?: number
 	): Promise<{
 		entities: IBackgroundTask[];
 		cursor?: string;

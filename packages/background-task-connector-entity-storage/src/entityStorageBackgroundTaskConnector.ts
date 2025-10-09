@@ -42,6 +42,11 @@ import type { IEntityStorageBackgroundTaskConnectorConstructorOptions } from "./
  */
 export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConnector {
 	/**
+	 * Runtime name for the class.
+	 */
+	public static readonly CLASS_NAME: string = nameof<EntityStorageBackgroundTaskConnector>();
+
+	/**
 	 * The namespace supported by the background task connector.
 	 */
 	public static readonly NAMESPACE: string = "entity-storage";
@@ -63,11 +68,6 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @internal
 	 */
 	private static readonly _DEFAULT_CLEANUP_INTERVAL: number = 120000;
-
-	/**
-	 * Runtime name for the class.
-	 */
-	public readonly CLASS_NAME: string = nameof<EntityStorageBackgroundTaskConnector>();
 
 	/**
 	 * The handlers for tasks.
@@ -157,7 +157,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		const validationErrors: IValidationFailure[] = [];
 		if (!Is.undefined(options?.config?.taskInterval)) {
 			Guards.integer(
-				this.CLASS_NAME,
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
 				nameof(options.config.taskInterval),
 				options.config.taskInterval
 			);
@@ -171,7 +171,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		}
 		if (!Is.undefined(options?.config?.retryInterval)) {
 			Guards.integer(
-				this.CLASS_NAME,
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
 				nameof(options.config.retryInterval),
 				options.config.retryInterval
 			);
@@ -185,7 +185,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		}
 		if (!Is.undefined(options?.config?.cleanupInterval)) {
 			Guards.integer(
-				this.CLASS_NAME,
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
 				nameof(options.config.cleanupInterval),
 				options.config.cleanupInterval
 			);
@@ -197,7 +197,11 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 				{ minValue: 5000 }
 			);
 		}
-		Validation.asValidationError(this.CLASS_NAME, nameof(options?.config), validationErrors);
+		Validation.asValidationError(
+			EntityStorageBackgroundTaskConnector.CLASS_NAME,
+			nameof(options?.config),
+			validationErrors
+		);
 
 		this._engineName = options?.config?.engineName ?? "engine";
 		this._taskInterval =
@@ -261,9 +265,9 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		method: string,
 		stateChangeCallback?: (task: IBackgroundTask<T, U>) => Promise<void>
 	): Promise<void> {
-		Guards.stringValue(this.CLASS_NAME, nameof(taskType), taskType);
-		Guards.stringValue(this.CLASS_NAME, nameof(module), module);
-		Guards.stringValue(this.CLASS_NAME, nameof(method), method);
+		Guards.stringValue(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskType), taskType);
+		Guards.stringValue(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(module), module);
+		Guards.stringValue(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(method), method);
 
 		this._taskHandlers[taskType] = {
 			module,
@@ -281,7 +285,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @param taskType The type of the task handler to remove.
 	 */
 	public async unregisterHandler(taskType: string): Promise<void> {
-		Guards.stringValue(this.CLASS_NAME, nameof(taskType), taskType);
+		Guards.stringValue(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskType), taskType);
 		delete this._taskHandlers[taskType];
 	}
 
@@ -304,11 +308,15 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			retainFor?: number;
 		}
 	): Promise<string> {
-		Guards.stringValue(this.CLASS_NAME, nameof(type), type);
+		Guards.stringValue(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(type), type);
 
 		const validationErrors: IValidationFailure[] = [];
 		if (!Is.undefined(options?.retryCount)) {
-			Guards.integer(this.CLASS_NAME, nameof(options.retryCount), options.retryCount);
+			Guards.integer(
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
+				nameof(options.retryCount),
+				options.retryCount
+			);
 			Validation.integer(
 				nameof(options.retryCount),
 				options.retryCount,
@@ -318,7 +326,11 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			);
 		}
 		if (!Is.undefined(options?.retryInterval)) {
-			Guards.integer(this.CLASS_NAME, nameof(options.retryInterval), options.retryInterval);
+			Guards.integer(
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
+				nameof(options.retryInterval),
+				options.retryInterval
+			);
 			Validation.integer(
 				nameof(options.retryInterval),
 				options.retryInterval,
@@ -328,7 +340,11 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			);
 		}
 		if (!Is.undefined(options?.retainFor)) {
-			Guards.integer(this.CLASS_NAME, nameof(options.retainFor), options.retainFor);
+			Guards.integer(
+				EntityStorageBackgroundTaskConnector.CLASS_NAME,
+				nameof(options.retainFor),
+				options.retainFor
+			);
 			Validation.integer(
 				nameof(options.retainFor),
 				options.retainFor,
@@ -337,7 +353,11 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 				{ minValue: -1 }
 			);
 		}
-		Validation.asValidationError(this.CLASS_NAME, nameof(options), validationErrors);
+		Validation.asValidationError(
+			EntityStorageBackgroundTaskConnector.CLASS_NAME,
+			nameof(options),
+			validationErrors
+		);
 
 		const id = Converter.bytesToHex(RandomHelper.generate(16));
 
@@ -375,12 +395,12 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @returns The details of the task.
 	 */
 	public async get<T, U>(taskId: string): Promise<IBackgroundTask<T, U> | undefined> {
-		Urn.guard(this.CLASS_NAME, nameof(taskId), taskId);
+		Urn.guard(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskId), taskId);
 
 		const urnParsed = Urn.fromValidString(taskId);
 
 		if (urnParsed.namespaceMethod() !== EntityStorageBackgroundTaskConnector.NAMESPACE) {
-			throw new GeneralError(this.CLASS_NAME, "namespaceMismatch", {
+			throw new GeneralError(EntityStorageBackgroundTaskConnector.CLASS_NAME, "namespaceMismatch", {
 				namespace: EntityStorageBackgroundTaskConnector.NAMESPACE,
 				id: taskId
 			});
@@ -401,12 +421,12 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @returns Nothing.
 	 */
 	public async retry(taskId: string): Promise<void> {
-		Urn.guard(this.CLASS_NAME, nameof(taskId), taskId);
+		Urn.guard(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskId), taskId);
 
 		const urnParsed = Urn.fromValidString(taskId);
 
 		if (urnParsed.namespaceMethod() !== EntityStorageBackgroundTaskConnector.NAMESPACE) {
-			throw new GeneralError(this.CLASS_NAME, "namespaceMismatch", {
+			throw new GeneralError(EntityStorageBackgroundTaskConnector.CLASS_NAME, "namespaceMismatch", {
 				namespace: EntityStorageBackgroundTaskConnector.NAMESPACE,
 				id: taskId
 			});
@@ -432,12 +452,12 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @returns Nothing.
 	 */
 	public async remove(taskId: string): Promise<void> {
-		Urn.guard(this.CLASS_NAME, nameof(taskId), taskId);
+		Urn.guard(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskId), taskId);
 
 		const urnParsed = Urn.fromValidString(taskId);
 
 		if (urnParsed.namespaceMethod() !== EntityStorageBackgroundTaskConnector.NAMESPACE) {
-			throw new GeneralError(this.CLASS_NAME, "namespaceMismatch", {
+			throw new GeneralError(EntityStorageBackgroundTaskConnector.CLASS_NAME, "namespaceMismatch", {
 				namespace: EntityStorageBackgroundTaskConnector.NAMESPACE,
 				id: taskId
 			});
@@ -458,12 +478,12 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @returns Nothing.
 	 */
 	public async cancel(taskId: string): Promise<void> {
-		Urn.guard(this.CLASS_NAME, nameof(taskId), taskId);
+		Urn.guard(EntityStorageBackgroundTaskConnector.CLASS_NAME, nameof(taskId), taskId);
 
 		const urnParsed = Urn.fromValidString(taskId);
 
 		if (urnParsed.namespaceMethod() !== EntityStorageBackgroundTaskConnector.NAMESPACE) {
-			throw new GeneralError(this.CLASS_NAME, "namespaceMismatch", {
+			throw new GeneralError(EntityStorageBackgroundTaskConnector.CLASS_NAME, "namespaceMismatch", {
 				namespace: EntityStorageBackgroundTaskConnector.NAMESPACE,
 				id: taskId
 			});
@@ -489,7 +509,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @param sortProperty The property to sort by, defaults to dateCreated.
 	 * @param sortDirection The order to sort by, defaults to ascending.
 	 * @param cursor The cursor to get the next page of tasks.
-	 * @param pageSize The maximum number of entities in a page.
+	 * @param limit Limit the number of entities to return.
 	 * @returns The list of tasks.
 	 */
 	public async query(
@@ -498,7 +518,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		sortProperty?: "dateCreated" | "dateModified" | "dateCompleted" | "status",
 		sortDirection?: SortDirection,
 		cursor?: string,
-		pageSize?: number
+		limit?: number
 	): Promise<{
 		entities: IBackgroundTask[];
 		cursor?: string;
@@ -510,7 +530,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			sortProperty,
 			sortDirection,
 			cursor,
-			pageSize
+			limit
 		);
 
 		return {
@@ -527,7 +547,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	 * @param sortProperty The property to sort by, defaults to dateCreated.
 	 * @param sortDirection The order to sort by, defaults to ascending.
 	 * @param cursor The cursor to get the next page of tasks.
-	 * @param pageSize The maximum number of entities in a page.
+	 * @param limit Limit the number of entities to return.
 	 * @returns The list of tasks.
 	 * @internal
 	 */
@@ -538,7 +558,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		sortProperty?: "dateCreated" | "dateModified" | "dateCompleted" | "dateNextProcess" | "status",
 		sortDirection?: SortDirection,
 		cursor?: string,
-		pageSize?: number
+		limit?: number
 	): Promise<{
 		entities: BackgroundTask[];
 		cursor?: string;
@@ -591,7 +611,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			],
 			undefined,
 			cursor,
-			pageSize
+			limit
 		);
 
 		return {
@@ -715,7 +735,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 							} else {
 								this._logging?.log({
 									level: "error",
-									source: this.CLASS_NAME,
+									source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 									ts: Date.now(),
 									message: "noHandler",
 									data: {
@@ -748,7 +768,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 		try {
 			this._logging?.log({
 				level: "info",
-				source: this.CLASS_NAME,
+				source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 				ts: Date.now(),
 				message: "start",
 				data: {
@@ -828,7 +848,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 
 		this._logging?.log({
 			level: "info",
-			source: this.CLASS_NAME,
+			source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 			ts: Date.now(),
 			message: "complete",
 			data: {

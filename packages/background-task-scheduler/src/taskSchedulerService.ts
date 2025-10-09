@@ -17,7 +17,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	/**
 	 * Runtime name for the class.
 	 */
-	public readonly CLASS_NAME: string = nameof<TaskSchedulerService>();
+	public static readonly CLASS_NAME: string = nameof<TaskSchedulerService>();
 
 	/**
 	 * The logger for the task service.
@@ -95,7 +95,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 
 		this._logging?.log({
 			level: "info",
-			source: this.CLASS_NAME,
+			source: TaskSchedulerService.CLASS_NAME,
 			ts: Date.now(),
 			message: "taskAdded",
 			data: {
@@ -115,7 +115,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 		if (!Is.empty(this._tasks[taskId])) {
 			this._logging?.log({
 				level: "info",
-				source: this.CLASS_NAME,
+				source: TaskSchedulerService.CLASS_NAME,
 				ts: Date.now(),
 				message: "taskRemoved",
 				data: {
@@ -211,7 +211,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 				if (!Is.empty(taskTime.nextTriggerTime) && taskTime.nextTriggerTime <= now) {
 					this._logging?.log({
 						level: "info",
-						source: this.CLASS_NAME,
+						source: TaskSchedulerService.CLASS_NAME,
 						ts: Date.now(),
 						message: "taskTriggered",
 						data: {
@@ -224,8 +224,8 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 						await task.taskCallback();
 					} catch (error) {
 						this._logging?.log({
-							level: "info",
-							source: this.CLASS_NAME,
+							level: "error",
+							source: TaskSchedulerService.CLASS_NAME,
 							ts: Date.now(),
 							message: "taskFailed",
 							data: {

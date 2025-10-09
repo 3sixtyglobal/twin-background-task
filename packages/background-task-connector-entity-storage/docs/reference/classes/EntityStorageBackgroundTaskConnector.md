@@ -28,23 +28,19 @@ The options for the connector.
 
 ## Properties
 
+### CLASS\_NAME
+
+> `readonly` `static` **CLASS\_NAME**: `string`
+
+Runtime name for the class.
+
+***
+
 ### NAMESPACE
 
 > `readonly` `static` **NAMESPACE**: `string` = `"entity-storage"`
 
 The namespace supported by the background task connector.
-
-***
-
-### CLASS\_NAME
-
-> `readonly` **CLASS\_NAME**: `string`
-
-Runtime name for the class.
-
-#### Implementation of
-
-`IBackgroundTaskConnector.CLASS_NAME`
 
 ## Methods
 
@@ -364,7 +360,7 @@ Nothing.
 
 ### query()
 
-> **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `pageSize?`): `Promise`\<\{ `entities`: `IBackgroundTask`\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
+> **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `limit?`): `Promise`\<\{ `entities`: `IBackgroundTask`\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
 
 Get a list of tasks.
 
@@ -400,11 +396,11 @@ The order to sort by, defaults to ascending.
 
 The cursor to get the next page of tasks.
 
-##### pageSize?
+##### limit?
 
 `number`
 
-The maximum number of entities in a page.
+Limit the number of entities to return.
 
 #### Returns
 

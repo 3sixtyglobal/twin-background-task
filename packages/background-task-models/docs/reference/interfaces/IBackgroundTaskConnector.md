@@ -6,6 +6,14 @@ Interface describing a background task connector.
 
 - `IComponent`
 
+## Indexable
+
+\[`key`: `string`\]: `any`
+
+All methods are optional, so we introduce an index signature to allow
+any additional properties or methods, which removes the TypeScript error where
+the class has no properties in common with the type.
+
 ## Methods
 
 ### registerHandler()
@@ -236,7 +244,7 @@ Nothing.
 
 ### query()
 
-> **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `pageSize?`): `Promise`\<\{ `entities`: [`IBackgroundTask`](IBackgroundTask.md)\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
+> **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `limit?`): `Promise`\<\{ `entities`: [`IBackgroundTask`](IBackgroundTask.md)\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
 
 Get a list of tasks.
 
@@ -272,11 +280,11 @@ The order to sort by, defaults to ascending.
 
 The cursor to get the next page of tasks.
 
-##### pageSize?
+##### limit?
 
 `number`
 
-The maximum number of entities in a page.
+Limit the number of entities to return.
 
 #### Returns
 
