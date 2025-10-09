@@ -1,5 +1,12 @@
 # @twin.org/background-task-models - Changelog
 
+## [0.0.2-next.9](https://github.com/twinfoundation/background-task/compare/background-task-models-v0.0.2-next.8...background-task-models-v0.0.2-next.9) (2025-10-09)
+
+
+### Features
+
+* add validate-locales ([968cbf9](https://github.com/twinfoundation/background-task/commit/968cbf966fffb5060305e8b221fecc0b6c8105b9))
+
 ## [0.0.2-next.8](https://github.com/twinfoundation/background-task/compare/background-task-models-v0.0.2-next.7...background-task-models-v0.0.2-next.8) (2025-09-29)
 
 
