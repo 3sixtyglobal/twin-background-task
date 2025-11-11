@@ -1,6 +1,6 @@
 {
 	"name": "@twin.org/background-task-connector-entity-storage",
-	"version": "0.0.3-next.0",
+	"version": "0.0.3-next.1",
 	"description": "Background task connector implementation using entity storage",
 	"repository": {
 		"type": "git",
@@ -28,7 +28,7 @@
 		"dist:no-test": "npm run clean && npm run build && npm run test:build && npm run docs"
 	},
 	"dependencies": {
-		"@twin.org/background-task-models": "0.0.3-next.0",
+		"@twin.org/background-task-models": "0.0.3-next.1",
 		"@twin.org/context": "next",
 		"@twin.org/core": "next",
 		"@twin.org/crypto": "next",
