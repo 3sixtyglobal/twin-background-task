@@ -6,14 +6,6 @@ Interface describing a background task connector.
 
 - `IComponent`
 
-## Indexable
-
-\[`key`: `string`\]: `any`
-
-All methods are optional, so we introduce an index signature to allow
-any additional properties or methods, which removes the TypeScript error where
-the class has no properties in common with the type.
-
 ## Methods
 
 ### registerHandler()
@@ -146,7 +138,7 @@ The id of the created task.
 
 ### get()
 
-> **get**\<`T`, `U`\>(`taskId`): `Promise`\<`undefined` \| [`IBackgroundTask`](IBackgroundTask.md)\<`T`, `U`\>\>
+> **get**\<`T`, `U`\>(`taskId`): `Promise`\<[`IBackgroundTask`](IBackgroundTask.md)\<`T`, `U`\> \| `undefined`\>
 
 Get the task details.
 
@@ -170,7 +162,7 @@ The id of the task to get the details for.
 
 #### Returns
 
-`Promise`\<`undefined` \| [`IBackgroundTask`](IBackgroundTask.md)\<`T`, `U`\>\>
+`Promise`\<[`IBackgroundTask`](IBackgroundTask.md)\<`T`, `U`\> \| `undefined`\>
 
 The details of the task.
 

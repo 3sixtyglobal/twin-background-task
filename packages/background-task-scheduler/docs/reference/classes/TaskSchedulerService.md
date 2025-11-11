@@ -36,25 +36,37 @@ Runtime name for the class.
 
 ## Methods
 
+### className()
+
+> **className**(): `string`
+
+Returns the class name of the component.
+
+#### Returns
+
+`string`
+
+The class name of the component.
+
+#### Implementation of
+
+`ITaskSchedulerComponent.className`
+
+***
+
 ### stop()
 
-> **stop**(`nodeIdentity`, `nodeLoggingComponentType`): `Promise`\<`void`\>
+> **stop**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
 The component needs to be stopped when the node is closed.
 
 #### Parameters
 
-##### nodeIdentity
+##### nodeLoggingComponentType?
 
 `string`
 
-The identity of the node stopping the component.
-
-##### nodeLoggingComponentType
-
 The node logging component type.
-
-`undefined` | `string`
 
 #### Returns
 

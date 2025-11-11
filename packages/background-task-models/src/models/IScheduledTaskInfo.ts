@@ -1,6 +1,6 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-import type { IScheduledTaskTime } from "./IScheduledTaskTime";
+import type { IScheduledTaskTime } from "./IScheduledTaskTime.js";
 
 /**
  * Interface describing a scheduled task information.

@@ -6,6 +6,7 @@ import {
 	type IBackgroundTaskConnector,
 	TaskStatus
 } from "@twin.org/background-task-models";
+import { ContextIdStore } from "@twin.org/context";
 import {
 	BaseError,
 	ComponentFactory,
@@ -34,8 +35,8 @@ import {
 import type { ILoggingComponent } from "@twin.org/logging-models";
 import { ModuleHelper } from "@twin.org/modules";
 import { nameof, nameofCamelCase } from "@twin.org/nameof";
-import type { BackgroundTask } from "./entities/backgroundTask";
-import type { IEntityStorageBackgroundTaskConnectorConstructorOptions } from "./models/IEntityStorageBackgroundTaskConnectorConstructorOptions";
+import type { BackgroundTask } from "./entities/backgroundTask.js";
+import type { IEntityStorageBackgroundTaskConnectorConstructorOptions } from "./models/IEntityStorageBackgroundTaskConnectorConstructorOptions.js";
 
 /**
  * Class for performing background task operations in entity storage.
@@ -215,12 +216,19 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	}
 
 	/**
+	 * Returns the class name of the component.
+	 * @returns The class name of the component.
+	 */
+	public className(): string {
+		return EntityStorageBackgroundTaskConnector.CLASS_NAME;
+	}
+
+	/**
 	 * The component needs to be started when the node is initialized.
-	 * @param nodeIdentity The identity of the node starting the component.
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async start(nodeIdentity?: string, nodeLoggingComponentType?: string): Promise<void> {
+	public async start(nodeLoggingComponentType?: string): Promise<void> {
 		if (!this._started) {
 			this._started = true;
 			await this.cleanupRetained();
@@ -234,11 +242,10 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 
 	/**
 	 * The component needs to be stopped when the node is closed.
-	 * @param nodeIdentity The identity of the node stopping the component.
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async stop(nodeIdentity?: string, nodeLoggingComponentType?: string): Promise<void> {
+	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		if (this._started) {
 			this._started = false;
 
@@ -374,7 +381,8 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			retainFor: options?.retainFor ?? 0,
 			status: TaskStatus.Pending,
 			retriesRemaining: options?.retryCount,
-			payload: ObjectHelper.clone(payload)
+			payload: ObjectHelper.clone(payload),
+			contextIds: await ContextIdStore.getContextIds()
 		};
 
 		await this._backgroundTaskEntityStorageConnector.set(backgroundTask);
@@ -733,7 +741,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 
 								await this.runTask(nextTask);
 							} else {
-								this._logging?.log({
+								await this._logging?.log({
 									level: "error",
 									source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 									ts: Date.now(),
@@ -766,7 +774,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 	private async runTask(task: BackgroundTask): Promise<void> {
 		let taskError: IError | undefined;
 		try {
-			this._logging?.log({
+			await this._logging?.log({
 				level: "info",
 				source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 				ts: Date.now(),
@@ -786,7 +794,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			const result = await ModuleHelper.execModuleMethodThread(
 				this._taskHandlers[task.type].module,
 				this._taskHandlers[task.type].method,
-				Is.empty(task.payload) ? [engineCloneData] : [engineCloneData, task.payload]
+				[engineCloneData, task.contextIds, task.payload]
 			);
 
 			// No error so set the result and complete the task.
@@ -846,7 +854,7 @@ export class EntityStorageBackgroundTaskConnector implements IBackgroundTaskConn
 			await stateChangeCallback(task);
 		}
 
-		this._logging?.log({
+		await this._logging?.log({
 			level: "info",
 			source: EntityStorageBackgroundTaskConnector.CLASS_NAME,
 			ts: Date.now(),

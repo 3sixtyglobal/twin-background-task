@@ -8,7 +8,7 @@ import type {
 import { BaseError, ComponentFactory, Is } from "@twin.org/core";
 import type { ILoggingComponent } from "@twin.org/logging-models";
 import { nameof } from "@twin.org/nameof";
-import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions";
+import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions.js";
 
 /**
  * Class for scheduling tasks.
@@ -59,15 +59,19 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	}
 
 	/**
+	 * Returns the class name of the component.
+	 * @returns The class name of the component.
+	 */
+	public className(): string {
+		return TaskSchedulerService.CLASS_NAME;
+	}
+
+	/**
 	 * The component needs to be stopped when the node is closed.
-	 * @param nodeIdentity The identity of the node stopping the component.
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns Nothing.
 	 */
-	public async stop(
-		nodeIdentity: string,
-		nodeLoggingComponentType: string | undefined
-	): Promise<void> {
+	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		this.stopTimer();
 	}
 
@@ -93,7 +97,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			taskCallback
 		};
 
-		this._logging?.log({
+		await this._logging?.log({
 			level: "info",
 			source: TaskSchedulerService.CLASS_NAME,
 			ts: Date.now(),
@@ -113,7 +117,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 */
 	public async removeTask(taskId: string): Promise<void> {
 		if (!Is.empty(this._tasks[taskId])) {
-			this._logging?.log({
+			await this._logging?.log({
 				level: "info",
 				source: TaskSchedulerService.CLASS_NAME,
 				ts: Date.now(),
@@ -209,7 +213,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 
 			for (const taskTime of task.times) {
 				if (!Is.empty(taskTime.nextTriggerTime) && taskTime.nextTriggerTime <= now) {
-					this._logging?.log({
+					await this._logging?.log({
 						level: "info",
 						source: TaskSchedulerService.CLASS_NAME,
 						ts: Date.now(),
@@ -223,7 +227,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 					try {
 						await task.taskCallback();
 					} catch (error) {
-						this._logging?.log({
+						await this._logging?.log({
 							level: "error",
 							source: TaskSchedulerService.CLASS_NAME,
 							ts: Date.now(),

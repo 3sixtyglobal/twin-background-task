@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0.
 import path from "node:path";
 import { RandomHelper } from "@twin.org/core";
-import { EngineCore } from "@twin.org/engine-core";
-import { EngineCoreFactory } from "@twin.org/engine-models";
+import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
 import { SortDirection } from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
 import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
 import { nameof } from "@twin.org/nameof";
-import type { BackgroundTask } from "../src/entities/backgroundTask";
-import { EntityStorageBackgroundTaskConnector } from "../src/entityStorageBackgroundTaskConnector";
-import { initSchema } from "../src/schema";
+import type { BackgroundTask } from "../src/entities/backgroundTask.js";
+import { EntityStorageBackgroundTaskConnector } from "../src/entityStorageBackgroundTaskConnector.js";
+import { initSchema } from "../src/schema.js";
 
 let backgroundTaskEntityStorageConnector: MemoryEntityStorageConnector<BackgroundTask>;
 
@@ -20,12 +19,15 @@ let backgroundTaskEntityStorageConnector: MemoryEntityStorageConnector<Backgroun
  * @param itemIndex The item index to wait for.
  */
 async function waitForStatus(status: string, itemIndex: number = 0): Promise<void> {
-	for (let i = 0; i < 500; i++) {
+	for (let i = 0; i < 50; i++) {
 		if (backgroundTaskEntityStorageConnector.getStore()[itemIndex]?.status === status) {
 			return;
 		}
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
+	console.debug(
+		JSON.stringify(backgroundTaskEntityStorageConnector.getStore()[itemIndex], null, 2)
+	);
 	throw new Error("Timeout waiting for status");
 }
 
@@ -75,7 +77,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 	test("can create a task with no handler", async () => {
 		const backgroundTaskConnector = new EntityStorageBackgroundTaskConnector();
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		const taskId = await backgroundTaskConnector.create("my-type");
 		expect(taskId.split(":")[0]).toEqual("background-task");
 		expect(taskId.split(":")[1]).toEqual("entity-storage");
@@ -100,7 +102,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		await backgroundTaskConnector.create("my-type", { counter: 0 });
 
 		const store = backgroundTaskEntityStorageConnector.getStore();
@@ -129,7 +131,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		await backgroundTaskConnector.create("my-type", { counter: 0 }, { retainFor: 10000 });
 
 		await waitForStatus("success");
@@ -159,7 +161,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		await backgroundTaskConnector.create(
 			"my-type",
 			{ throw: true, counter: 0 },
@@ -199,7 +201,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		await backgroundTaskConnector.create("my-type", data, {
 			retainFor: 10000,
 			retryCount: 1,
@@ -266,7 +268,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 
 		for (let i = 0; i < 5; i++) {
 			await backgroundTaskConnector.create("my-type", { id: i, counter: i }, { retainFor: 10000 });
@@ -354,7 +356,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		for (let i = 0; i < 5; i++) {
 			await backgroundTaskConnector.create(
 				"my-type",
@@ -447,7 +449,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			"testMethod"
 		);
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		for (let i = 0; i < 5; i++) {
 			await backgroundTaskConnector.create(
 				"my-type",
@@ -552,7 +554,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			config: { taskInterval: 1000 }
 		});
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 		const id = await backgroundTaskConnector.create(
 			"my-type",
 			{ counter: 0 },
@@ -589,7 +591,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			retainUntil: now - 100
 		});
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 
 		const store = backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(0);
@@ -617,7 +619,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			retainUntil: now
 		});
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 
 		const store = backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(1);
@@ -644,7 +646,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			}
 		});
 
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 
 		const store = backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(1);
@@ -655,14 +657,10 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 			config: { taskInterval: 1000 }
 		});
 
-		const engineCore = new EngineCore({
-			config: {
-				debug: true,
-				silent: true,
-				types: {}
-			}
-		});
-		EngineCoreFactory.register("engine", () => engineCore);
+		EngineCoreFactory.register(
+			"engine",
+			() => ({ getCloneData: () => ({ foo: "bar" }) }) as unknown as IEngineCore
+		);
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -671,7 +669,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 		);
 
 		await backgroundTaskConnector.create("my-type", { counter: 1 }, { retainFor: 10000 });
-		await backgroundTaskConnector.start("");
+		await backgroundTaskConnector.start();
 
 		await waitForStatus("success");
 
@@ -684,15 +682,7 @@ describe("EntityStorageBackgroundTaskConnector", () => {
 				},
 				result: {
 					counter: 2,
-					engineCloneData: {
-						config: {
-							debug: true,
-							silent: true,
-							types: {}
-						},
-						state: {},
-						typeInitialisers: []
-					}
+					engineCloneData: { foo: "bar" }
 				},
 				status: "success",
 				type: "my-type"

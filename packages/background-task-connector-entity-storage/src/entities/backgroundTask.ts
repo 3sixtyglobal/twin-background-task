@@ -1,6 +1,7 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
 import type { TaskStatus } from "@twin.org/background-task-models";
+import type { IContextIds } from "@twin.org/context";
 import type { IError } from "@twin.org/core";
 import { entity, property, SortDirection } from "@twin.org/entity";
 
@@ -109,4 +110,10 @@ export class BackgroundTask {
 	 */
 	@property({ type: "object", optional: true })
 	public error?: IError;
+
+	/**
+	 * The context ids that were set at the point the task was created.
+	 */
+	@property({ type: "object", optional: true })
+	public contextIds?: IContextIds;
 }

@@ -44,19 +44,31 @@ The namespace supported by the background task connector.
 
 ## Methods
 
+### className()
+
+> **className**(): `string`
+
+Returns the class name of the component.
+
+#### Returns
+
+`string`
+
+The class name of the component.
+
+#### Implementation of
+
+`IBackgroundTaskConnector.className`
+
+***
+
 ### start()
 
-> **start**(`nodeIdentity?`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
+> **start**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
 The component needs to be started when the node is initialized.
 
 #### Parameters
-
-##### nodeIdentity?
-
-`string`
-
-The identity of the node starting the component.
 
 ##### nodeLoggingComponentType?
 
@@ -78,17 +90,11 @@ Nothing.
 
 ### stop()
 
-> **stop**(`nodeIdentity?`, `nodeLoggingComponentType?`): `Promise`\<`void`\>
+> **stop**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
 The component needs to be stopped when the node is closed.
 
 #### Parameters
-
-##### nodeIdentity?
-
-`string`
-
-The identity of the node stopping the component.
 
 ##### nodeLoggingComponentType?
 
@@ -246,7 +252,7 @@ The id of the created task.
 
 ### get()
 
-> **get**\<`T`, `U`\>(`taskId`): `Promise`\<`undefined` \| `IBackgroundTask`\<`T`, `U`\>\>
+> **get**\<`T`, `U`\>(`taskId`): `Promise`\<`IBackgroundTask`\<`T`, `U`\> \| `undefined`\>
 
 Get the task details.
 
@@ -270,7 +276,7 @@ The id of the task to get the details for.
 
 #### Returns
 
-`Promise`\<`undefined` \| `IBackgroundTask`\<`T`, `U`\>\>
+`Promise`\<`IBackgroundTask`\<`T`, `U`\> \| `undefined`\>
 
 The details of the task.
 

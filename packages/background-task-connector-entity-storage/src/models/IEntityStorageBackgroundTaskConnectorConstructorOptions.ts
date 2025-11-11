@@ -1,6 +1,6 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-import type { IEntityStorageBackgroundTaskConnectorConfig } from "./IEntityStorageBackgroundTaskConnectorConfig";
+import type { IEntityStorageBackgroundTaskConnectorConfig } from "./IEntityStorageBackgroundTaskConnectorConfig.js";
 
 /**
  * Options for the entity storage background task connector constructor.

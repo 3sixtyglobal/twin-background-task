@@ -1,6 +1,6 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-import { TaskSchedulerService } from "../src/taskSchedulerService";
+import { TaskSchedulerService } from "../src/taskSchedulerService.js";
 
 describe("TaskSchedulerService", () => {
 	beforeEach(() => {
