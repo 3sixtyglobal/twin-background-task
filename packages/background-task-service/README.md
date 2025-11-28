@@ -1,11 +1,11 @@
-# TWIN Background Task Models
+# TWIN Background Task Service
 
-Models which define the structure of the background task contracts.
+Background task service implementation using entity storage.
 
 ## Installation
 
 ```shell
-npm install @twin.org/background-task-models
+npm install @twin.org/background-task-service
 ```
 
 ## Examples

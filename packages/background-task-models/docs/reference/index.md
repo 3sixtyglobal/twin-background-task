@@ -3,7 +3,7 @@
 ## Interfaces
 
 - [IBackgroundTask](interfaces/IBackgroundTask.md)
-- [IBackgroundTaskConnector](interfaces/IBackgroundTaskConnector.md)
+- [IBackgroundTaskComponent](interfaces/IBackgroundTaskComponent.md)
 - [IScheduledTaskInfo](interfaces/IScheduledTaskInfo.md)
 - [IScheduledTaskTime](interfaces/IScheduledTaskTime.md)
 - [ITaskSchedulerComponent](interfaces/ITaskSchedulerComponent.md)
@@ -14,5 +14,4 @@
 
 ## Variables
 
-- [BackgroundTaskConnectorFactory](variables/BackgroundTaskConnectorFactory.md)
 - [TaskStatus](variables/TaskStatus.md)

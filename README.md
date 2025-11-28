@@ -4,8 +4,8 @@ This mono-repository contains the packages to use with background tasks in TWIN 
 
 ## Packages
 
-- [background-task-models](packages/background-task-models/README.md) - Models which define the structure of the background task contracts and connectors.
-- [background-task-connector-entity-storage](packages/background-task-connector-entity-storage/README.md) - Background task connector implementation using entity storage.
+- [background-task-models](packages/background-task-models/README.md) - Models which define the structure of the background task contracts.
+- [background-task-service](packages/background-task-service/README.md) - Background task component implementation using entity storage.
 - [background-task-scheduler](packages/background-task-scheduler/README.md) - Schedule tasks for a specific time or interval.
 
 ## Contributing

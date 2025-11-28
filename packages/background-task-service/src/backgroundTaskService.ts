@@ -1,0 +1,1244 @@
+// Copyright 2024 IOTA Stiftung.
+// SPDX-License-Identifier: Apache-2.0.
+import os from "node:os";
+import { isMainThread, threadId as workerThreadId } from "node:worker_threads";
+import {
+	type IBackgroundTask,
+	type IBackgroundTaskComponent,
+	TaskStatus
+} from "@twin.org/background-task-models";
+import { ContextIdStore } from "@twin.org/context";
+import {
+	ComponentFactory,
+	Converter,
+	GeneralError,
+	Guards,
+	Is,
+	type IValidationFailure,
+	ObjectHelper,
+	RandomHelper,
+	StringHelper,
+	Urn,
+	Validation,
+	BaseError,
+	Coerce
+} from "@twin.org/core";
+import { EngineCoreFactory } from "@twin.org/engine-models";
+import {
+	ComparisonOperator,
+	type EntityCondition,
+	LogicalOperator,
+	SortDirection
+} from "@twin.org/entity";
+import {
+	EntityStorageConnectorFactory,
+	type IEntityStorageConnector
+} from "@twin.org/entity-storage-models";
+import type { ILoggingComponent } from "@twin.org/logging-models";
+import { ModuleHelper } from "@twin.org/modules";
+import { nameof, nameofCamelCase } from "@twin.org/nameof";
+import type { BackgroundTask } from "./entities/backgroundTask.js";
+import type { IBackgroundTaskHandler } from "./models/IBackgroundTaskHandler.js";
+import type { IBackgroundTaskServiceConstructorOptions } from "./models/IBackgroundTaskServiceConstructorOptions.js";
+import type { IBackgroundTaskWorker } from "./models/IBackgroundTaskWorker.js";
+
+/**
+ * Class for performing background task operations.
+ */
+export class BackgroundTaskService implements IBackgroundTaskComponent {
+	/**
+	 * Runtime name for the class.
+	 */
+	public static readonly CLASS_NAME: string = nameof<BackgroundTaskService>();
+
+	/**
+	 * The namespace supported by the background task.
+	 */
+	public static readonly NAMESPACE: string = "entity-storage";
+
+	/**
+	 * The default task interval in milliseconds.
+	 * @internal
+	 */
+	private static readonly _DEFAULT_TASK_INTERVAL: number = 100;
+
+	/**
+	 * The default retry interval in milliseconds.
+	 * @internal
+	 */
+	private static readonly _DEFAULT_RETRY_INTERVAL: number = 5000;
+
+	/**
+	 * The default cleanup interval in milliseconds.
+	 * @internal
+	 */
+	private static readonly _DEFAULT_CLEANUP_INTERVAL: number = 120000;
+
+	/**
+	 * The handlers for tasks.
+	 * @internal
+	 */
+	private readonly _taskHandlers: {
+		[taskType: string]: IBackgroundTaskHandler;
+	};
+
+	/**
+	 * The entity storage for the background tasks keys.
+	 * @internal
+	 */
+	private readonly _backgroundTaskEntityStorageConnector: IEntityStorageConnector<BackgroundTask>;
+
+	/**
+	 * The logger component for the background task.
+	 * @internal
+	 */
+	private readonly _logging?: ILoggingComponent;
+
+	/**
+	 * The workers for the background tasks.
+	 * @internal
+	 */
+	private readonly _workers: {
+		[workerId: string]: {
+			taskType: string;
+			worker: IBackgroundTaskWorker;
+		};
+	};
+
+	/**
+	 * The maximum number of concurrent tasks allowed.
+	 * @internal
+	 */
+	private readonly _maxSystemWorkerCount: number;
+
+	/**
+	 * Determine if the component has been started.
+	 * @internal
+	 */
+	private _started: boolean;
+
+	/**
+	 * The last time the retained tasks were cleaned up
+	 * @internal
+	 */
+	private _lastCleanup: number;
+
+	/**
+	 * The default interval to leave between tasks in milliseconds, defaults to 100ms.
+	 * @internal
+	 */
+	private readonly _taskInterval: number;
+
+	/**
+	 * The default retry interval to leave between tasks in milliseconds, defaults to 5000ms.
+	 * @internal
+	 */
+	private readonly _retryInterval: number;
+
+	/**
+	 * The default cleanup interval for removing retained tasks in milliseconds, defaults to 120000ms.
+	 * @internal
+	 */
+	private readonly _cleanupInterval: number;
+
+	/**
+	 * Create a new instance of BackgroundTaskService.
+	 * @param options The options for the service.
+	 */
+	constructor(options?: IBackgroundTaskServiceConstructorOptions) {
+		this._backgroundTaskEntityStorageConnector = EntityStorageConnectorFactory.get(
+			options?.backgroundTaskEntityStorageType ?? "background-task"
+		);
+		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
+
+		const cpuCount = os.cpus().length;
+		// Determine the maximum system worker count, either custom or based on CPU cores
+		let maxSystemWorkerCount = Coerce.integer(options?.config?.maxSystemWorkerCount) ?? cpuCount;
+		if (maxSystemWorkerCount <= 0) {
+			// A negative worker count implies unlimited workers, so we set it to the number of CPU cores
+			maxSystemWorkerCount = cpuCount;
+		}
+
+		this._maxSystemWorkerCount = maxSystemWorkerCount;
+		this._taskHandlers = {};
+		this._workers = {};
+		this._started = false;
+		this._lastCleanup = 0;
+
+		const validationErrors: IValidationFailure[] = [];
+		if (!Is.undefined(options?.config?.taskInterval)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.config.taskInterval),
+				options.config.taskInterval
+			);
+			Validation.integer(
+				nameof(options.config.taskInterval),
+				options.config.taskInterval,
+				validationErrors,
+				undefined,
+				{ minValue: 1 }
+			);
+		}
+		if (!Is.undefined(options?.config?.retryInterval)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.config.retryInterval),
+				options.config.retryInterval
+			);
+			Validation.integer(
+				nameof(options.config.retryInterval),
+				options.config.retryInterval,
+				validationErrors,
+				undefined,
+				{ minValue: 1 }
+			);
+		}
+		if (!Is.undefined(options?.config?.cleanupInterval)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.config.cleanupInterval),
+				options.config.cleanupInterval
+			);
+			Validation.integer(
+				nameof(options.config.cleanupInterval),
+				options.config.cleanupInterval,
+				validationErrors,
+				undefined,
+				{ minValue: 5000 }
+			);
+		}
+		Validation.asValidationError(
+			BackgroundTaskService.CLASS_NAME,
+			nameof(options?.config),
+			validationErrors
+		);
+
+		this._taskInterval =
+			options?.config?.taskInterval ?? BackgroundTaskService._DEFAULT_TASK_INTERVAL;
+		this._retryInterval =
+			options?.config?.retryInterval ?? BackgroundTaskService._DEFAULT_RETRY_INTERVAL;
+		this._cleanupInterval =
+			options?.config?.cleanupInterval ?? BackgroundTaskService._DEFAULT_CLEANUP_INTERVAL;
+	}
+
+	/**
+	 * Returns the class name of the component.
+	 * @returns The class name of the component.
+	 */
+	public className(): string {
+		return BackgroundTaskService.CLASS_NAME;
+	}
+
+	/**
+	 * The component needs to be started when the node is initialized.
+	 * @param nodeLoggingComponentType The node logging component type.
+	 * @returns Nothing.
+	 */
+	public async start(nodeLoggingComponentType?: string): Promise<void> {
+		if (!this._started) {
+			this._started = true;
+
+			await this.cleanupRetained();
+
+			for (const taskType of Object.keys(this._taskHandlers)) {
+				await this.processTaskType(taskType);
+			}
+		}
+	}
+
+	/**
+	 * The component needs to be stopped when the node is closed.
+	 * @param nodeLoggingComponentType The node logging component type.
+	 * @returns Nothing.
+	 */
+	public async stop(nodeLoggingComponentType?: string): Promise<void> {
+		if (this._started) {
+			this._started = false;
+
+			// Clear any wait timers as we are stopping
+			for (const taskHandler of Object.values(this._taskHandlers)) {
+				if (!Is.undefined(taskHandler.waitTimerId)) {
+					clearTimeout(taskHandler.waitTimerId);
+					delete taskHandler.waitTimerId;
+				}
+
+				for (const worker of taskHandler.workers) {
+					if (!Is.undefined(worker.idleTimerId)) {
+						clearTimeout(worker.idleTimerId);
+						delete worker.idleTimerId;
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Register a handler for a task.
+	 * @param taskType The type of the task the handler can process.
+	 * @param module The module the handler is in.
+	 * @param method The method in the module to execute.
+	 * @param stateChangeCallback The callback to execute when the task state is updated.
+	 * @param options Additional options for the task.
+	 * @param options.maxWorkerCount The maximum number of workers in the pool.
+	 * @param options.idleShutdownTimeout Terminate the thread after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
+	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
+	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
+	 * @returns Nothing.
+	 */
+	public async registerHandler<T, U>(
+		taskType: string,
+		module: string,
+		method: string,
+		stateChangeCallback?: (task: IBackgroundTask<T, U>) => Promise<void>,
+		options?: {
+			maxWorkerCount?: number;
+			idleShutdownTimeout?: number;
+			initialiseMethod?: string;
+			shutdownMethod?: string;
+		}
+	): Promise<void> {
+		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
+		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(module), module);
+		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(method), method);
+
+		let maxWorkerCount = Coerce.integer(options?.maxWorkerCount) ?? 1;
+		const idleShutdownTimeout = Coerce.integer(options?.idleShutdownTimeout) ?? 0;
+
+		if (maxWorkerCount < 0) {
+			// A negative worker count implies unlimited workers, so we set it to the system max
+			maxWorkerCount = this._maxSystemWorkerCount;
+		} else {
+			// A non-negative worker count implies a limited number of workers
+			// but we limit it to the system max
+			maxWorkerCount = Math.min(maxWorkerCount, this._maxSystemWorkerCount);
+		}
+
+		this._taskHandlers[taskType] = {
+			module,
+			processingMethod: method,
+			stateChangeCallback,
+			initialiseMethod: options?.initialiseMethod,
+			shutdownMethod: options?.shutdownMethod,
+			maxWorkerCount,
+			idleShutdownTimeout,
+			workers: []
+		};
+
+		await this.processTaskType(taskType);
+	}
+
+	/**
+	 * Unregister a handler for a task.
+	 * @param taskType The type of the task handler to remove.
+	 */
+	public async unregisterHandler(taskType: string): Promise<void> {
+		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
+		delete this._taskHandlers[taskType];
+	}
+
+	/**
+	 * Create a new task.
+	 * @param taskType The type of the task.
+	 * @param payload The payload for the task.
+	 * @param options Additional options for the task.
+	 * @param options.retryCount The number of times to retry the task if it fails, leave undefined to retry forever.
+	 * @param options.retryInterval The interval in milliseconds to wait between retries, defaults to 5000, leave undefined for default scheduling.
+	 * @param options.retainFor The amount of time in milliseconds to retain the result until removal, defaults to 0 for immediate removal, set to -1 to keep forever.
+	 * @returns The id of the created task.
+	 */
+	public async create<T>(
+		taskType: string,
+		payload?: T,
+		options?: {
+			retryCount?: number;
+			retryInterval?: number;
+			retainFor?: number;
+		}
+	): Promise<string> {
+		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
+
+		const validationErrors: IValidationFailure[] = [];
+		if (!Is.undefined(options?.retryCount)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.retryCount),
+				options.retryCount
+			);
+			Validation.integer(
+				nameof(options.retryCount),
+				options.retryCount,
+				validationErrors,
+				undefined,
+				{ minValue: 1 }
+			);
+		}
+		if (!Is.undefined(options?.retryInterval)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.retryInterval),
+				options.retryInterval
+			);
+			Validation.integer(
+				nameof(options.retryInterval),
+				options.retryInterval,
+				validationErrors,
+				undefined,
+				{ minValue: 1 }
+			);
+		}
+		if (!Is.undefined(options?.retainFor)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.retainFor),
+				options.retainFor
+			);
+			Validation.integer(
+				nameof(options.retainFor),
+				options.retainFor,
+				validationErrors,
+				undefined,
+				{ minValue: -1 }
+			);
+		}
+
+		Validation.asValidationError(
+			BackgroundTaskService.CLASS_NAME,
+			nameof(options),
+			validationErrors
+		);
+
+		const id = Converter.bytesToHex(RandomHelper.generate(16));
+
+		const now = new Date(Date.now()).toISOString();
+
+		const backgroundTask: BackgroundTask = {
+			id,
+			type: taskType,
+			threadId: this.getThreadId(),
+			dateCreated: now,
+			dateModified: now,
+			dateNextProcess: now,
+			retryInterval: options?.retryInterval,
+			retainFor: options?.retainFor ?? 0,
+			status: TaskStatus.Pending,
+			retriesRemaining: options?.retryCount,
+			payload: ObjectHelper.clone(payload),
+			contextIds: await ContextIdStore.getContextIds()
+		};
+
+		await this._backgroundTaskEntityStorageConnector.set(backgroundTask);
+
+		// Give this method a chance to return before processing tasks.
+		setTimeout(async () => {
+			await this.processTaskType(taskType);
+		}, 100);
+
+		return `background-task:${BackgroundTaskService.NAMESPACE}:${id}`;
+	}
+
+	/**
+	 * Get the task details.
+	 * @param taskId The id of the task to get the details for.
+	 * @returns The details of the task.
+	 */
+	public async get<T, U>(taskId: string): Promise<IBackgroundTask<T, U> | undefined> {
+		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
+
+		const urnParsed = Urn.fromValidString(taskId);
+
+		if (urnParsed.namespaceMethod() !== BackgroundTaskService.NAMESPACE) {
+			throw new GeneralError(BackgroundTaskService.CLASS_NAME, "namespaceMismatch", {
+				namespace: BackgroundTaskService.NAMESPACE,
+				id: taskId
+			});
+		}
+
+		const task = await this._backgroundTaskEntityStorageConnector.get(
+			urnParsed.namespaceSpecific(1)
+		);
+
+		if (Is.object(task)) {
+			return this.mapEntityToModel(task);
+		}
+	}
+
+	/**
+	 * Retry a failed task immediately instead of waiting for it's next scheduled retry time.
+	 * @param taskId The id of the task to retry.
+	 * @returns Nothing.
+	 */
+	public async retry(taskId: string): Promise<void> {
+		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
+
+		const urnParsed = Urn.fromValidString(taskId);
+
+		if (urnParsed.namespaceMethod() !== BackgroundTaskService.NAMESPACE) {
+			throw new GeneralError(BackgroundTaskService.CLASS_NAME, "namespaceMismatch", {
+				namespace: BackgroundTaskService.NAMESPACE,
+				id: taskId
+			});
+		}
+
+		const task = await this._backgroundTaskEntityStorageConnector.get(
+			urnParsed.namespaceSpecific(1)
+		);
+
+		if (
+			Is.object(task) &&
+			Is.stringValue(task.dateNextProcess) &&
+			task.status === TaskStatus.Pending
+		) {
+			task.dateNextProcess = new Date(Date.now()).toISOString();
+			await this._backgroundTaskEntityStorageConnector.set(task);
+
+			await this.processTaskType(task.type);
+		}
+	}
+
+	/**
+	 * Remove a task ignoring any retain until date.
+	 * @param taskId The id of the task to remove.
+	 * @returns Nothing.
+	 */
+	public async remove(taskId: string): Promise<void> {
+		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
+
+		const urnParsed = Urn.fromValidString(taskId);
+
+		if (urnParsed.namespaceMethod() !== BackgroundTaskService.NAMESPACE) {
+			throw new GeneralError(BackgroundTaskService.CLASS_NAME, "namespaceMismatch", {
+				namespace: BackgroundTaskService.NAMESPACE,
+				id: taskId
+			});
+		}
+
+		const task = await this._backgroundTaskEntityStorageConnector.get(
+			urnParsed.namespaceSpecific(1)
+		);
+
+		if (Is.object(task)) {
+			await this._backgroundTaskEntityStorageConnector.remove(urnParsed.namespaceSpecific(1));
+		}
+	}
+
+	/**
+	 * Cancel a task, will only be actioned if the task is currently pending.
+	 * @param taskId The id of the task to cancel.
+	 * @returns Nothing.
+	 */
+	public async cancel(taskId: string): Promise<void> {
+		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
+
+		const urnParsed = Urn.fromValidString(taskId);
+
+		if (urnParsed.namespaceMethod() !== BackgroundTaskService.NAMESPACE) {
+			throw new GeneralError(BackgroundTaskService.CLASS_NAME, "namespaceMismatch", {
+				namespace: BackgroundTaskService.NAMESPACE,
+				id: taskId
+			});
+		}
+
+		const task = await this._backgroundTaskEntityStorageConnector.get(
+			urnParsed.namespaceSpecific(1)
+		);
+
+		if (Is.object(task) && task.status === TaskStatus.Pending) {
+			task.status = TaskStatus.Cancelled;
+			task.dateCancelled = new Date(Date.now()).toISOString();
+			task.dateNextProcess = undefined;
+			task.retainUntil = this.calculateRetainTimestamp(task);
+			await this._backgroundTaskEntityStorageConnector.set(task);
+
+			await this.fireStateChanged(task);
+		}
+	}
+
+	/**
+	 * Get a list of tasks.
+	 * @param taskType The type of the task to get.
+	 * @param taskStatus The status of the task to get.
+	 * @param sortProperty The property to sort by, defaults to dateCreated.
+	 * @param sortDirection The order to sort by, defaults to ascending.
+	 * @param cursor The cursor to get the next page of tasks.
+	 * @param limit Limit the number of entities to return.
+	 * @returns The list of tasks.
+	 */
+	public async query(
+		taskType?: string,
+		taskStatus?: TaskStatus,
+		sortProperty?: "dateCreated" | "dateModified" | "dateCompleted" | "status",
+		sortDirection?: SortDirection,
+		cursor?: string,
+		limit?: number
+	): Promise<{
+		entities: IBackgroundTask[];
+		cursor?: string;
+	}> {
+		const result = await this.internalQuery(
+			taskType,
+			taskStatus ? [taskStatus] : undefined,
+			undefined,
+			sortProperty,
+			sortDirection,
+			cursor,
+			limit
+		);
+
+		return {
+			entities: result.entities.map(t => this.mapEntityToModel(t)),
+			cursor: result.cursor
+		};
+	}
+
+	/**
+	 * Process the tasks of the specified type.
+	 * @param taskType The type of the task to process.
+	 * @internal
+	 */
+	private async processTaskType(taskType: string): Promise<void> {
+		const taskHandler = this._taskHandlers[taskType];
+
+		if (this._started && !Is.empty(taskHandler)) {
+			// If there is an existing wait timer for this task type, clear it before setting a new one
+			// If there is a wait time for this task type then clear it up
+			const waitTimerId = taskHandler.waitTimerId;
+			if (!Is.undefined(waitTimerId)) {
+				clearTimeout(waitTimerId);
+				delete taskHandler.waitTimerId;
+			}
+
+			// Now try and get the next task to process
+			const nextTask = await this.getNextTask(taskType);
+
+			// If there is a next task to process, try and process it
+			if (Is.stringValue(nextTask?.dateNextProcess)) {
+				// Check that we have reached the processing time for the next task
+				// if not then we need to wait until it is ready to be processed
+				const now = Date.now();
+				const nextProcess = new Date(nextTask.dateNextProcess).getTime();
+
+				// We haven't reached the next process time yet, so just set a timer
+				// to try again when we reach it
+				if (nextProcess > now) {
+					taskHandler.waitTimerId = setTimeout(
+						async () => this.processTaskType(taskType),
+						nextProcess - now
+					);
+				} else {
+					// Next process time has been reached so we can prepare to process the task
+
+					// First check if any of the current workers are idle
+					let activeWorkerCount = 0;
+					let usedIdle = false;
+					for (const worker of taskHandler.workers) {
+						if (Is.empty(worker.task)) {
+							// Found an idle worker, no need for a new worker
+							// we can just process the task on this one
+							// If there is an idle timer for the worker, clear it now
+							if (Is.object(worker.idleTimerId)) {
+								clearTimeout(worker.idleTimerId);
+								delete worker.idleTimerId;
+							}
+							await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
+							usedIdle = true;
+						} else {
+							activeWorkerCount++;
+						}
+					}
+
+					if (!usedIdle) {
+						// If we didn't use an idle worker, and the active worker count
+						// is less than the maximum allowed for the task type, create a new worker
+						if (activeWorkerCount < taskHandler.maxWorkerCount) {
+							if (Object.keys(this._workers).length >= this._maxSystemWorkerCount) {
+								// If there are no available system workers, we cannot create
+								// any more workers right now, we log a warning and schedule
+								// a retry for later
+								if (activeWorkerCount === 0) {
+									// We have reached the system worker limit, so we cannot create
+									// any more workers right now, log a warning
+									await this._logging?.log({
+										level: "warn",
+										source: BackgroundTaskService.CLASS_NAME,
+										ts: Date.now(),
+										message: "maxSystemWorkerCountReached",
+										data: {
+											maxSystemWorkerCount: this._maxSystemWorkerCount,
+											type: taskType
+										}
+									});
+
+									// Schedule a retry for later
+									this.scheduleNextTaskProcessing(taskType);
+								} else {
+									// There is no capacity to process this task right now, but the
+									// task type has active workers, so we just wait for the next processing
+									// cycle to pick it up, which will be triggered when a current task
+									// finishes processing
+								}
+							} else {
+								const workerId = Converter.bytesToHex(RandomHelper.generate(8));
+								const newWorker: IBackgroundTaskWorker = {
+									workerId
+								};
+								taskHandler.workers.push(newWorker);
+								this._workers[workerId] = {
+									taskType,
+									worker: newWorker
+								};
+								await this.workerProcessTasks(taskHandler, newWorker, taskType, nextTask);
+							}
+						} else {
+							// There is no capacity to process this task right now, so we just wait
+							// for the next processing cycle to pick it up, which will be triggered
+							// when a current task finishes processing
+						}
+					}
+
+					await this.cleanupRetained();
+				}
+			}
+		}
+	}
+
+	/**
+	 * Get the next task of the type to process.
+	 * @param taskType The type of the task to get.
+	 * @returns The next task to process or undefined if there are no tasks to process.
+	 * @internal
+	 */
+	private async getNextTask(taskType: string): Promise<BackgroundTask | undefined> {
+		// If there is a processing task from a previous run, we need to finish up handling that first.
+		// we sort by dateNextProcess so that anything that failed or is in a retry state will get processed
+		// in the correct order.
+		// We include pending tasks when requested, this allows us to pick up any tasks that were pending
+		// but never started due to the service stopping.
+		// Returning a task in processing state allows us to continue processing tasks that were interrupted, but
+		// any tasks should internally decide if they need to be retried or not based on their own state.
+		const nextTasks = await this.internalQuery(
+			taskType,
+			[TaskStatus.Processing, TaskStatus.Pending],
+			this.getThreadId(),
+			"dateNextProcess",
+			SortDirection.Ascending,
+			undefined,
+			1
+		);
+
+		if (nextTasks.entities.length > 0) {
+			const nextTask = nextTasks.entities[0];
+
+			// All tasks with processing or pending status should have next process set
+			if (Is.stringValue(nextTask.dateNextProcess)) {
+				return nextTask;
+			}
+		}
+	}
+
+	/**
+	 * Process tasks on a worker.
+	 * @param taskHandler The background task handler.
+	 * @param worker The background task worker.
+	 * @param taskType The type of the task to process.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async workerProcessTasks(
+		taskHandler: IBackgroundTaskHandler,
+		worker: IBackgroundTaskWorker,
+		taskType: string,
+		nextTask: BackgroundTask
+	): Promise<void> {
+		if (Is.empty(worker.module)) {
+			// No module worker is set, so this must be a new worker,
+			// initialise it now
+			worker.module = ModuleHelper.execModuleMethodThreadMessage(
+				taskHandler.module,
+				async (operation, result, err) => {
+					if (operation === taskHandler.processingMethod) {
+						// The result of the process task is just the worker id
+						// which we can use to lookup the thread and the task running on it
+						await this.taskFinishedProcessing(taskHandler, worker.workerId, result, err);
+					} else if (
+						Is.stringValue(taskHandler.shutdownMethod) &&
+						operation === taskHandler.shutdownMethod
+					) {
+						// The runner has stopped, so we need to remove the worker from the pool
+						await this.cleanupWorker(taskHandler, worker);
+					}
+				},
+				{
+					threadName: `thread-${StringHelper.kebabCase(taskType)}`
+				}
+			);
+
+			if (Is.stringValue(taskHandler.initialiseMethod)) {
+				await this._logging?.log({
+					level: "info",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "initialisingWorker",
+					data: {
+						type: taskType
+					}
+				});
+
+				// Clone the current engine and set it to the worker initialise method
+				const engine = EngineCoreFactory.getIfExists("engine");
+				const engineCloneData = engine?.getCloneData();
+
+				const currentContextIds = await ContextIdStore.getContextIds();
+				worker.module.executeMethod(
+					taskHandler.initialiseMethod,
+					[engineCloneData],
+					currentContextIds
+				);
+			}
+		}
+
+		// Assign the task to the worker
+		worker.task = nextTask;
+
+		// Immediately set the task to processing to prevent multiple instances of the same task running.
+		nextTask.status = TaskStatus.Processing;
+		nextTask.dateModified = new Date(Date.now()).toISOString();
+		await this._backgroundTaskEntityStorageConnector.set(nextTask);
+
+		await this.fireStateChanged(nextTask);
+
+		await this._logging?.log({
+			level: "info",
+			source: BackgroundTaskService.CLASS_NAME,
+			ts: Date.now(),
+			message: "start",
+			data: {
+				id: nextTask.id,
+				type: nextTask.type
+			}
+		});
+
+		// Send the task to the worker worker for processing
+		const engine = EngineCoreFactory.getIfExists("engine");
+		const engineCloneData = engine?.getCloneData();
+		worker.module.executeMethod(
+			taskHandler.processingMethod,
+			[engineCloneData, nextTask.payload],
+			nextTask.contextIds
+		);
+	}
+
+	/**
+	 * Cleanup a worker from the pool.
+	 * @param taskHandler The background task handler.
+	 * @param thread The background task thread.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async cleanupWorker(
+		taskHandler: IBackgroundTaskHandler,
+		thread: IBackgroundTaskWorker
+	): Promise<void> {
+		const worker = this._workers[thread.workerId];
+		if (!Is.empty(worker)) {
+			// Remove the thread from the pool
+			if (!Is.empty(taskHandler)) {
+				taskHandler.workers = taskHandler.workers.filter(t => t.workerId !== thread.workerId);
+			}
+			// Remove the worker from the worker list
+			delete this._workers[thread.workerId];
+		}
+	}
+
+	/**
+	 * Handle when a task has finished processing.
+	 * @param taskHandler The background task handler.
+	 * @param workerId The id of the worker that processed the task.
+	 * @param result The result of the task processing.
+	 * @param err Any error that occurred during processing.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async taskFinishedProcessing(
+		taskHandler: IBackgroundTaskHandler,
+		workerId: string,
+		result: unknown,
+		err?: Error
+	): Promise<void> {
+		const worker = this._workers[workerId];
+		if (!Is.empty(worker)) {
+			const task = worker.worker.task;
+
+			// The task should always be set here, but just in case we check
+			if (Is.object(task)) {
+				if (Is.empty(err)) {
+					// No error so set the task state to success and clear
+					// any retry information
+					task.result = result;
+					task.status = TaskStatus.Success;
+					task.dateNextProcess = undefined;
+					task.dateCompleted = new Date(Date.now()).toISOString();
+					delete task.retriesRemaining;
+					delete task.retryInterval;
+					delete task.error;
+				} else {
+					// There was an error from the task processing, so set the error information
+					let taskError = BaseError.fromError(err).toJsonObject(true);
+					if (
+						taskError.message === `${nameofCamelCase(ModuleHelper)}.resultError` &&
+						!Is.empty(taskError.cause)
+					) {
+						taskError = BaseError.fromError(taskError.cause).toJsonObject(true);
+					}
+
+					task.error = taskError;
+
+					// If there are retries remaining, set the task to pending and schedule the next retry.
+					if (Is.integer(task.retriesRemaining) && task.retriesRemaining > 0) {
+						task.status = TaskStatus.Pending;
+						task.retriesRemaining--;
+						const nextRetryMs: number = task.retryInterval ?? this._retryInterval;
+						const now: number = new Date(task.dateModified).getTime();
+						task.dateNextProcess = new Date(now + nextRetryMs).toISOString();
+					} else {
+						// Otherwise set the task to failed.
+						task.status = TaskStatus.Failed;
+						task.dateCompleted = new Date(Date.now()).toISOString();
+						task.dateNextProcess = undefined;
+					}
+				}
+
+				if (task.status === TaskStatus.Pending) {
+					// If it's pending, just update the task for the next retry
+					await this._backgroundTaskEntityStorageConnector.set(task);
+				} else {
+					await this.processRetention(task);
+				}
+
+				await this._logging?.log({
+					level: "info",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "complete",
+					data: {
+						id: task.id,
+						type: task.type,
+						status: task.status
+					}
+				});
+
+				await this.fireStateChanged(task);
+
+				// Clear the task from the work so that it can be re-used for the next task
+				worker.worker.task = undefined;
+
+				// If the terminate when idle option is set for the pool, we need to terminate the worker
+				// and remove it from the pool
+				if (taskHandler.idleShutdownTimeout >= 0 && task.status !== TaskStatus.Pending) {
+					if (taskHandler.idleShutdownTimeout > 0) {
+						worker.worker.idleTimerId = setTimeout(
+							async () => this.shutdownIdleThread(taskHandler, task, worker.worker),
+							taskHandler.idleShutdownTimeout
+						);
+					} else {
+						await this.shutdownIdleThread(taskHandler, task, worker.worker);
+					}
+				}
+
+				this.scheduleNextTaskProcessing(task.type);
+			}
+		}
+	}
+
+	/**
+	 * Schedule the next processing cycle for a task type.
+	 * @param taskType The type of the task to schedule.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private scheduleNextTaskProcessing(taskType: string): void {
+		setTimeout(async () => this.processTaskType(taskType), this._taskInterval);
+	}
+
+	/**
+	 * Shutdown an idle thread.
+	 * @param taskHandler The background task handler.
+	 * @param task The background task.
+	 * @param thread The background task thread.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async shutdownIdleThread(
+		taskHandler: IBackgroundTaskHandler,
+		task: IBackgroundTask,
+		thread: IBackgroundTaskWorker
+	): Promise<void> {
+		if (Is.stringValue(taskHandler.shutdownMethod)) {
+			// Call the shutdown method on the worker before terminating
+			// this will trigger the cleanupWorker method when complete
+			await this._logging?.log({
+				level: "info",
+				source: BackgroundTaskService.CLASS_NAME,
+				ts: Date.now(),
+				message: "shutdownWorker",
+				data: {
+					type: task.type
+				}
+			});
+			const boundMethod = thread.module?.executeMethod.bind(this);
+			if (Is.function(boundMethod)) {
+				boundMethod(taskHandler.shutdownMethod, []);
+			}
+		} else {
+			// No shutdown method, so just cleanup the worker immediately
+			await this.cleanupWorker(taskHandler, thread);
+		}
+	}
+
+	/**
+	 * Fire the state changed callback for a task.
+	 * @param task The task that changed state.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async fireStateChanged(task: BackgroundTask): Promise<void> {
+		const taskHandler = this._taskHandlers[task.type];
+		if (!Is.empty(taskHandler)) {
+			const stateChangeCallback = taskHandler.stateChangeCallback;
+			if (!Is.empty(stateChangeCallback)) {
+				await stateChangeCallback(this.mapEntityToModel(task));
+			}
+		}
+	}
+
+	/**
+	 * Process the retention of a task.
+	 * @param task The task to process retention for.
+	 * @returns Nothing.
+	 * @internal
+	 */
+	private async processRetention(task: BackgroundTask): Promise<void> {
+		// Depending on the retainFor value, either remove the task or set the retainUntil date.
+		// If the retainFor is 0, the default, it should be removed immediately.
+		// If the retainFor is -1, it should be retained forever.
+		// If it has a value in milliseconds, it should be retained until the retainUntil date.
+		if (task.retainFor === 0) {
+			await this._backgroundTaskEntityStorageConnector.remove(task.id);
+		} else {
+			task.retainUntil = this.calculateRetainTimestamp(task);
+			if (Is.integer(task.retainUntil)) {
+				delete task.retainFor;
+			}
+			await this._backgroundTaskEntityStorageConnector.set(task);
+		}
+	}
+
+	/**
+	 * Get a list of tasks.
+	 * @param taskType The type of the task to get.
+	 * @param taskStatuses The status of the task to get.
+	 * @param threadId The thread id to get tasks for, defaults to all threads.
+	 * @param sortProperty The property to sort by, defaults to dateCreated.
+	 * @param sortDirection The order to sort by, defaults to ascending.
+	 * @param cursor The cursor to get the next page of tasks.
+	 * @param limit Limit the number of entities to return.
+	 * @returns The list of tasks.
+	 * @internal
+	 */
+	private async internalQuery(
+		taskType?: string,
+		taskStatuses?: TaskStatus[],
+		threadId?: string,
+		sortProperty?: "dateCreated" | "dateModified" | "dateCompleted" | "dateNextProcess" | "status",
+		sortDirection?: SortDirection,
+		cursor?: string,
+		limit?: number
+	): Promise<{
+		entities: BackgroundTask[];
+		cursor?: string;
+	}> {
+		const condition: EntityCondition<BackgroundTask> = {
+			conditions: [],
+			logicalOperator: LogicalOperator.And
+		};
+
+		if (Is.stringValue(taskType)) {
+			condition.conditions.push({
+				property: "type",
+				comparison: ComparisonOperator.Equals,
+				value: taskType
+			});
+		}
+
+		if (Is.arrayValue(taskStatuses)) {
+			const statusCondition: EntityCondition<BackgroundTask> = {
+				conditions: [],
+				logicalOperator: LogicalOperator.Or
+			};
+			for (const taskStatus of taskStatuses) {
+				if (Is.arrayOneOf(taskStatus, Object.values(TaskStatus))) {
+					statusCondition.conditions.push({
+						property: "status",
+						comparison: ComparisonOperator.Equals,
+						value: taskStatus
+					});
+				}
+			}
+			condition.conditions.push(statusCondition);
+		}
+
+		if (Is.stringValue(threadId)) {
+			condition.conditions.push({
+				property: "threadId",
+				comparison: ComparisonOperator.Equals,
+				value: threadId
+			});
+		}
+
+		const result = await this._backgroundTaskEntityStorageConnector.query(
+			condition,
+			[
+				{
+					property: sortProperty ?? "dateCreated",
+					sortDirection: sortDirection ?? SortDirection.Descending
+				}
+			],
+			undefined,
+			cursor,
+			limit
+		);
+
+		return {
+			entities: result.entities as BackgroundTask[],
+			cursor: result.cursor
+		};
+	}
+
+	/**
+	 * Map the entity to a model.
+	 * @param task The task to map to the model.
+	 * @returns The task model.
+	 * @internal
+	 */
+	private mapEntityToModel<T, U>(task: BackgroundTask): IBackgroundTask<T, U> {
+		return {
+			id: task.id,
+			type: task.type,
+			threadId: task.threadId,
+			dateCreated: task.dateCreated,
+			dateModified: task.dateModified,
+			dateCompleted: task.dateCompleted,
+			dateCancelled: task.dateCancelled,
+			dateRetainUntil: Is.integer(task.retainUntil)
+				? new Date(task.retainUntil).toISOString()
+				: undefined,
+			retryInterval: task.retryInterval,
+			retriesRemaining: task.retriesRemaining,
+			status: task.status,
+			payload: task.payload as T,
+			result: task.result as U,
+			error: task.error
+		};
+	}
+
+	/**
+	 * Calculate the retain timestamp for the task.
+	 * @param task The task to calculate the retain timestamp.
+	 * @returns The retain timestamp or undefined if not is calculated.
+	 * @internal
+	 */
+	private calculateRetainTimestamp(task: BackgroundTask): number | undefined {
+		let retainTimestamp: number | undefined;
+
+		// We only calculate a retain timestamp if the task is in a completion state
+		// and has a length of time set for how long to retain it
+		// If the retain time is -1 that means retain forever, these tasks can
+		// still be removed with a manual remove call
+		if (
+			(task.status === TaskStatus.Success ||
+				task.status === TaskStatus.Cancelled ||
+				task.status === TaskStatus.Failed) &&
+			Is.integer(task.retainFor)
+		) {
+			if (task.retainFor > 0) {
+				retainTimestamp = new Date(task.dateModified).getTime() + task.retainFor;
+			} else if (task.retainFor === -1) {
+				retainTimestamp = -1;
+			}
+		}
+
+		return retainTimestamp;
+	}
+
+	/**
+	 * Cleanup the retained tasks.
+	 * @internal
+	 */
+	private async cleanupRetained(): Promise<void> {
+		try {
+			const now = Date.now();
+
+			// Cleanup every minute
+			if (now - this._lastCleanup < this._cleanupInterval) {
+				return;
+			}
+
+			this._lastCleanup = now;
+
+			let cursor: string | undefined;
+
+			do {
+				const result = await this._backgroundTaskEntityStorageConnector.query({
+					conditions: [
+						{
+							property: "retainUntil",
+							value: 0,
+							comparison: ComparisonOperator.GreaterThan
+						},
+						{
+							property: "retainUntil",
+							value: now,
+							comparison: ComparisonOperator.LessThan
+						},
+						{
+							conditions: [
+								{
+									property: "status",
+									value: TaskStatus.Success,
+									comparison: ComparisonOperator.Equals
+								},
+								{
+									property: "status",
+									value: TaskStatus.Failed,
+									comparison: ComparisonOperator.Equals
+								},
+								{
+									property: "status",
+									value: TaskStatus.Cancelled,
+									comparison: ComparisonOperator.Equals
+								}
+							],
+							logicalOperator: LogicalOperator.Or
+						}
+					]
+				});
+				cursor = result.cursor;
+
+				for (const entity of result.entities) {
+					await this._backgroundTaskEntityStorageConnector.remove(entity.id as string);
+				}
+			} while (Is.stringValue(cursor));
+		} catch {
+			// If cleaning up the retained items fail we don't really care, they will get cleaned up on the next sweep.
+		}
+	}
+
+	/**
+	 * Get the thread id for the current thread.
+	 * @returns The thread id.
+	 * @internal
+	 */
+	private getThreadId(): string {
+		return isMainThread ? "main" : workerThreadId.toString();
+	}
+}

@@ -10,24 +10,15 @@
 	"packages": {
 		"packages/background-task-models": {
 			"package-name": "background-task-models",
-			"changelog-path": "docs/changelog.md",
-			"extra-files": [
-				"src/index.ts"
-			]
+			"changelog-path": "docs/changelog.md"
 		},
-		"packages/background-task-connector-entity-storage": {
-			"package-name": "background-task-connector-entity-storage",
-			"changelog-path": "docs/changelog.md",
-			"extra-files": [
-				"src/index.ts"
-			]
+		"packages/background-task-service": {
+			"package-name": "background-task-service",
+			"changelog-path": "docs/changelog.md"
 		},
 		"packages/background-task-scheduler": {
 			"package-name": "background-task-scheduler",
-			"changelog-path": "docs/changelog.md",
-			"extra-files": [
-				"src/index.ts"
-			]
+			"changelog-path": "docs/changelog.md"
 		}
 	},
 	"plugins": [
@@ -37,7 +28,7 @@
 			"groupName": "repo",
 			"components": [
 				"background-task-models",
-				"background-task-connector-entity-storage",
+				"background-task-service",
 				"background-task-scheduler"
 			]
 		}

@@ -1,0 +1,870 @@
+// Copyright 2024 IOTA Stiftung.
+// SPDX-License-Identifier: Apache-2.0.
+import os from "node:os";
+import path from "node:path";
+import { ContextIdStore } from "@twin.org/context";
+import { RandomHelper } from "@twin.org/core";
+import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
+import { SortDirection } from "@twin.org/entity";
+import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
+import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
+import { nameof } from "@twin.org/nameof";
+import { BackgroundTaskService } from "../src/backgroundTaskService.js";
+import type { BackgroundTask } from "../src/entities/backgroundTask.js";
+import { initSchema } from "../src/schema.js";
+
+let backgroundTaskEntityStorageConnector: MemoryEntityStorageConnector<BackgroundTask>;
+
+/**
+ * Wait for status.
+ * @param status The status to wait for.
+ * @param itemIndex The item index to wait for.
+ */
+async function waitForStatus(status: string, itemIndex: number = 0): Promise<void> {
+	const additionalItems = itemIndex * 2;
+	for (let i = 0; i < 50 + additionalItems; i++) {
+		if (backgroundTaskEntityStorageConnector.getStore()[itemIndex]?.status === status) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	console.debug(
+		JSON.stringify(backgroundTaskEntityStorageConnector.getStore()[itemIndex], null, 2)
+	);
+	throw new Error("Timeout waiting for status");
+}
+
+/**
+ * Wait for error.
+ * @param itemIndex The item index to wait for.
+ */
+async function waitForError(itemIndex: number = 0): Promise<void> {
+	for (let i = 0; i < 500; i++) {
+		if (backgroundTaskEntityStorageConnector.getStore()[itemIndex]?.error) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error("Timeout waiting for error");
+}
+
+describe("BackgroundTaskService", () => {
+	beforeAll(() => {
+		initSchema();
+
+		const mockRandom = vi.fn();
+
+		let i = 0;
+		mockRandom.mockImplementation(length => new Uint8Array(length).fill(i++));
+
+		RandomHelper.generate = mockRandom;
+	});
+
+	beforeEach(() => {
+		backgroundTaskEntityStorageConnector = new MemoryEntityStorageConnector<BackgroundTask>({
+			entitySchema: nameof<BackgroundTask>()
+		});
+
+		EntityStorageConnectorFactory.register(
+			"background-task",
+			() => backgroundTaskEntityStorageConnector
+		);
+	});
+
+	test("can construct with dependencies", async () => {
+		const backgroundTaskService = new BackgroundTaskService();
+
+		expect(backgroundTaskService).toBeDefined();
+	});
+
+	test("can create a task with no handler", async () => {
+		const backgroundTaskService = new BackgroundTaskService();
+
+		await backgroundTaskService.start();
+		const taskId = await backgroundTaskService.create("my-type");
+		expect(taskId.split(":")[0]).toEqual("background-task");
+		expect(taskId.split(":")[1]).toEqual("entity-storage");
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "00000000000000000000000000000000",
+				retainFor: 0,
+				status: "pending",
+				type: "my-type"
+			}
+		]);
+	});
+
+	test("can create a task with handler and no retainment", async () => {
+		const backgroundTaskService = new BackgroundTaskService();
+
+		await backgroundTaskService.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskService.start();
+		await backgroundTaskService.create("my-type", { counter: 0 });
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "01010101010101010101010101010101",
+				payload: {
+					counter: 0
+				},
+				retainFor: 0,
+				retriesRemaining: undefined,
+				retryInterval: undefined,
+				status: "pending",
+				threadId: "main",
+				type: "my-type"
+			}
+		]);
+	});
+
+	test("can create a task with handler and retainment", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+		await backgroundTaskConnector.create("my-type", { counter: 0 }, { retainFor: 10000 });
+
+		await waitForStatus("success");
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "02020202020202020202020202020202",
+				payload: {
+					counter: 0
+				},
+				result: {
+					counter: 1
+				},
+				status: "success",
+				type: "my-type"
+			}
+		]);
+	});
+
+	test("can create a task with handler and retainment with error and no retries", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+		await backgroundTaskConnector.create(
+			"my-type",
+			{ throw: true, counter: 0 },
+			{ retainFor: 10000 }
+		);
+
+		await waitForStatus("failed");
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "05050505050505050505050505050505",
+				type: "my-type",
+				status: "failed",
+				payload: {
+					counter: 0,
+					throw: true
+				},
+				error: {
+					name: "Error",
+					message: "error"
+				}
+			}
+		]);
+	});
+
+	test("can create a task with handler and retainment with error and single retry", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		const data = {
+			throw: true,
+			counter: 0
+		};
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+		await backgroundTaskConnector.create("my-type", data, {
+			retainFor: 10000,
+			retryCount: 1,
+			retryInterval: 2000
+		});
+
+		await waitForError();
+
+		let store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "07070707070707070707070707070707",
+				type: "my-type",
+				retryInterval: 2000,
+				status: "pending",
+				payload: {
+					counter: 0,
+					throw: true
+				},
+				error: {
+					name: "Error",
+					message: "error"
+				}
+			}
+		]);
+
+		if (store[0]?.payload) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(store[0].payload as any).throw = false;
+		}
+
+		const task = await backgroundTaskConnector.get(
+			"background-task:entity-storage:07070707070707070707070707070707"
+		);
+		expect(task).toBeDefined();
+
+		await waitForStatus("success");
+
+		store = backgroundTaskEntityStorageConnector.getStore();
+
+		expect(store).toMatchObject([
+			{
+				id: "07070707070707070707070707070707",
+				type: "my-type",
+				status: "success",
+				payload: {
+					counter: 0,
+					throw: false
+				},
+				result: {
+					counter: 1,
+					throw: false
+				}
+			}
+		]);
+	});
+
+	test("can add multiple tasks and process them in order", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+
+		for (let i = 0; i < 5; i++) {
+			await backgroundTaskConnector.create("my-type", { id: i, counter: i }, { retainFor: 10000 });
+		}
+
+		await waitForStatus("success", 4);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+
+		expect(store).toMatchObject([
+			{
+				id: "09090909090909090909090909090909",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 0,
+					counter: 0
+				},
+				result: {
+					id: 0,
+					counter: 1
+				}
+			},
+			{
+				id: "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 1,
+					counter: 1
+				},
+				result: {
+					id: 1,
+					counter: 2
+				}
+			},
+			{
+				id: "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 2,
+					counter: 2
+				},
+				result: {
+					id: 2,
+					counter: 3
+				}
+			},
+			{
+				id: "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 3,
+					counter: 3
+				},
+				result: {
+					id: 3,
+					counter: 4
+				}
+			},
+			{
+				id: "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 4,
+					counter: 4
+				},
+				result: {
+					id: 4,
+					counter: 5
+				}
+			}
+		]);
+	});
+
+	test("can add multiple tasks and process them in order, when one item fails and no retry", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+		for (let i = 0; i < 5; i++) {
+			await backgroundTaskConnector.create(
+				"my-type",
+				{ id: i, counter: i, throw: i === 2 },
+				{ retainFor: 10000 }
+			);
+		}
+
+		await waitForStatus("success", 4);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+
+		expect(store).toMatchObject([
+			{
+				id: "13131313131313131313131313131313",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 0,
+					counter: 0
+				},
+				result: {
+					id: 0,
+					counter: 1
+				}
+			},
+			{
+				id: "14141414141414141414141414141414",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 1,
+					counter: 1
+				},
+				result: {
+					id: 1,
+					counter: 2
+				}
+			},
+			{
+				id: "15151515151515151515151515151515",
+				type: "my-type",
+				status: "failed",
+				payload: {
+					id: 2,
+					counter: 2
+				},
+				error: {
+					name: "Error",
+					message: "error"
+				}
+			},
+			{
+				id: "16161616161616161616161616161616",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 3,
+					counter: 3
+				},
+				result: {
+					id: 3,
+					counter: 4
+				}
+			},
+			{
+				id: "17171717171717171717171717171717",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 4,
+					counter: 4
+				},
+				result: {
+					id: 4,
+					counter: 5
+				}
+			}
+		]);
+	});
+
+	test("can add multiple tasks and process them in order, when one item fails and retry", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 500 }
+		});
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod"
+		);
+
+		await backgroundTaskConnector.start();
+		for (let i = 0; i < 5; i++) {
+			await backgroundTaskConnector.create(
+				"my-type",
+				{ id: i, counter: 0, throw: i === 2 },
+				{ retainFor: 10000, retryCount: 1, retryInterval: 3000 }
+			);
+		}
+
+		await waitForError(2);
+		const store2 = backgroundTaskEntityStorageConnector.getStore();
+		if (store2[2]?.payload) {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(store2[2].payload as any).throw = false;
+		}
+		await waitForStatus("success", 2);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 0,
+					counter: 0
+				},
+				result: {
+					id: 0,
+					counter: 1
+				}
+			},
+			{
+				id: "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 1,
+					counter: 0
+				},
+				result: {
+					id: 1,
+					counter: 1
+				}
+			},
+			{
+				id: "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 2,
+					counter: 0
+				},
+				result: {
+					id: 2,
+					counter: 1
+				}
+			},
+			{
+				id: "20202020202020202020202020202020",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 3,
+					counter: 0
+				},
+				result: {
+					id: 3,
+					counter: 1
+				}
+			},
+			{
+				id: "21212121212121212121212121212121",
+				type: "my-type",
+				status: "success",
+				payload: {
+					id: 4,
+					counter: 0
+				},
+				result: {
+					id: 4,
+					counter: 1
+				}
+			}
+		]);
+
+		const completedOrder = await backgroundTaskConnector.query(
+			"my-type",
+			"success",
+			"dateCompleted",
+			SortDirection.Ascending
+		);
+		expect(completedOrder.entities.length).toBe(5);
+		expect(completedOrder.entities[0].id).toBe("1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d");
+		expect(completedOrder.entities[1].id).toBe("1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e");
+		expect(completedOrder.entities[2].id).toBe("20202020202020202020202020202020");
+		expect(completedOrder.entities[3].id).toBe("21212121212121212121212121212121");
+		expect(completedOrder.entities[4].id).toBe("1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f");
+	});
+
+	test("can create a task and cancel it", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 1000 }
+		});
+
+		await backgroundTaskConnector.start();
+		const id = await backgroundTaskConnector.create(
+			"my-type",
+			{ counter: 0 },
+			{ retryCount: 10, retryInterval: 10000, retainFor: 10000 }
+		);
+
+		await backgroundTaskConnector.cancel(id);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+
+		expect(store[0].status).toEqual("cancelled");
+		expect(store[0].dateCancelled).toBeDefined();
+	});
+
+	test("can cleanup retained items when passed their retained date", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 1000 }
+		});
+
+		const now = Date.now();
+		await backgroundTaskEntityStorageConnector.set({
+			id: "00000000000000000000000000000000",
+			type: "my-type",
+			threadId: "main",
+			dateCreated: new Date(now - 1000).toISOString(),
+			dateModified: new Date(now - 1000).toISOString(),
+			retryInterval: 10000,
+			retainFor: 10000,
+			status: "success",
+			retriesRemaining: 9,
+			payload: {
+				counter: 0
+			},
+			retainUntil: now - 100
+		});
+
+		await backgroundTaskConnector.start();
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store.length).toEqual(0);
+	});
+
+	test("can not cleanup retained items when equalling their retained date", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 1000 }
+		});
+
+		const now = Date.now();
+		await backgroundTaskEntityStorageConnector.set({
+			id: "00000000000000000000000000000000",
+			type: "my-type",
+			threadId: "main",
+			dateCreated: new Date(now).toISOString(),
+			dateModified: new Date(now).toISOString(),
+			retryInterval: 10000,
+			retainFor: 10000,
+			status: "success",
+			retriesRemaining: 9,
+			payload: {
+				counter: 0
+			},
+			retainUntil: now
+		});
+
+		await backgroundTaskConnector.start();
+
+		await new Promise(resolve => setTimeout(resolve, 1000));
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store.length).toEqual(1);
+	});
+
+	test("can not cleanup retained items when no retained date set", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 1000 }
+		});
+
+		const now = Date.now();
+		await backgroundTaskEntityStorageConnector.set({
+			id: "00000000000000000000000000000000",
+			type: "my-type",
+			threadId: "main",
+			dateCreated: new Date(now).toISOString(),
+			dateModified: new Date(now).toISOString(),
+			retryInterval: 10000,
+			retainFor: 10000,
+			status: "success",
+			retriesRemaining: 9,
+			payload: {
+				counter: 0
+			}
+		});
+
+		await backgroundTaskConnector.start();
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store.length).toEqual(1);
+	});
+
+	test("can start a clone of the engine in the background task", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService({
+			config: { taskInterval: 1000 }
+		});
+
+		EngineCoreFactory.register(
+			"engine",
+			() => ({ getCloneData: () => ({ foo: "bar" }) }) as unknown as IEngineCore
+		);
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodWithEngine"
+		);
+
+		await backgroundTaskConnector.create("my-type", { counter: 1 }, { retainFor: 10000 });
+		await backgroundTaskConnector.start();
+
+		await waitForStatus("success");
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store).toMatchObject([
+			{
+				id: "28282828282828282828282828282828",
+				payload: {
+					counter: 1
+				},
+				result: {
+					counter: 2,
+					engineCloneData: { foo: "bar" }
+				},
+				status: "success",
+				type: "my-type"
+			}
+		]);
+	});
+
+	test("can add task to a handler with init and shutdown methods", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod",
+			undefined,
+			{
+				initialiseMethod: "testMethodInitialise",
+				shutdownMethod: "testMethodShutdown"
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		await backgroundTaskConnector.create("my-type", { counter: 1 }, { retainFor: 10000 });
+
+		await waitForStatus("success", 0);
+	});
+
+	test("can add task to a handler with multiple threads", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodThreading",
+			undefined,
+			{
+				maxWorkerCount: 5
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		for (let i = 0; i < 5; i++) {
+			await backgroundTaskConnector.create("my-type", { counter: i }, { retainFor: 10000 });
+		}
+
+		await waitForStatus("success", 4);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+
+		const workerThreadIds = new Set();
+		for (const item of store) {
+			workerThreadIds.add(item.result as number);
+		}
+		expect(Array.from(workerThreadIds).length).toEqual(5);
+	});
+
+	test("can add task to a handler with no termination on idle", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodNonIdleTerminate",
+			undefined,
+			{
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		for (let i = 0; i < 5; i++) {
+			await backgroundTaskConnector.create("my-type", { counter: i }, { retainFor: 10000 });
+		}
+
+		await waitForStatus("success", 4);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store[4].result).toEqual(5);
+	});
+
+	test("can propogate context ids to background task", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodContextIds",
+			undefined,
+			{
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		await ContextIdStore.run({ testContextId: "12345" }, async () => {
+			await backgroundTaskConnector.create("my-type", { counter: 0 }, { retainFor: 10000 });
+		});
+
+		await waitForStatus("success", 0);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store[0].result).toEqual({ testContextId: "12345" });
+	});
+
+	test("can handle multiple tasks at the same time", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type-1",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodThreading"
+		);
+		await backgroundTaskConnector.registerHandler(
+			"my-type-2",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodThreading"
+		);
+
+		await backgroundTaskConnector.start();
+
+		await backgroundTaskConnector.create("my-type-1", { counter: 0 }, { retainFor: 10000 });
+		await backgroundTaskConnector.create("my-type-2", { counter: 0 }, { retainFor: 10000 });
+
+		await waitForStatus("success", 1);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		const workerThreadIds = new Set();
+		for (const item of store) {
+			workerThreadIds.add(item.result as number);
+		}
+		expect(Array.from(workerThreadIds).length).toEqual(2);
+	});
+
+	test("can use the maximum number of threads", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodThreadingSleep",
+			undefined,
+			{
+				maxWorkerCount: -1,
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		const systemWorkerCount = os.cpus().length;
+		const numberItems = systemWorkerCount * 2;
+
+		for (let i = 0; i < numberItems; i++) {
+			await backgroundTaskConnector.create(
+				"my-type",
+				{ counter: i },
+				{ retainFor: numberItems * 1000 }
+			);
+		}
+
+		await waitForStatus("success", numberItems - 1);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		const workerThreadIds = new Set();
+		for (const item of store) {
+			workerThreadIds.add(item.result as number);
+		}
+
+		// When running in virtual environments like GHA there is a limit, so this test only checks for more than half the CPU count
+		if (systemWorkerCount > 4) {
+			expect(Array.from(workerThreadIds).length).toBeGreaterThanOrEqual(systemWorkerCount / 2);
+		} else {
+			expect(Array.from(workerThreadIds).length).toBeGreaterThan(0);
+		}
+	});
+});
