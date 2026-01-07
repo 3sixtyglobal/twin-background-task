@@ -1,7 +1,8 @@
 {
 	"error": {
 		"backgroundTaskService": {
-			"namespaceMismatch": "The namespace in the urn \"{id}\" does not match the namespace of the entity storage background task \"{namespace}\""
+			"namespaceMismatch": "The namespace in the urn \"{id}\" does not match the namespace of the entity storage background task \"{namespace}\"",
+			"completeFailed": "Failed to complete processing task \"{id}\" with type \"{type}\" with status \"{status}\""
 		}
 	},
 	"info": {

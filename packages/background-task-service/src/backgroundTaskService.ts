@@ -915,17 +915,32 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					await this.processRetention(task);
 				}
 
-				await this._logging?.log({
-					level: "info",
-					source: BackgroundTaskService.CLASS_NAME,
-					ts: Date.now(),
-					message: "complete",
-					data: {
-						id: task.id,
-						type: task.type,
-						status: task.status
-					}
-				});
+				if (task.status === TaskStatus.Failed) {
+					await this._logging?.log({
+						level: "error",
+						source: BackgroundTaskService.CLASS_NAME,
+						ts: Date.now(),
+						message: "completeFailed",
+						data: {
+							id: task.id,
+							type: task.type,
+							status: task.status
+						},
+						error: BaseError.fromError(err)
+					});
+				} else {
+					await this._logging?.log({
+						level: "info",
+						source: BackgroundTaskService.CLASS_NAME,
+						ts: Date.now(),
+						message: "complete",
+						data: {
+							id: task.id,
+							type: task.type,
+							status: task.status
+						}
+					});
+				}
 
 				await this.fireStateChanged(task);
 
