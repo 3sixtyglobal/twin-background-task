@@ -1,6 +1,6 @@
 {
 	"name": "@twin.org/background-task-scheduler",
-	"version": "0.0.3-next.3",
+	"version": "0.0.3-next.4",
 	"description": "Background task scheduler",
 	"repository": {
 		"type": "git",
@@ -28,7 +28,7 @@
 		"dist:no-test": "npm run clean && npm run build && npm run test:build && npm run docs"
 	},
 	"dependencies": {
-		"@twin.org/background-task-models": "0.0.3-next.3",
+		"@twin.org/background-task-models": "0.0.3-next.4",
 		"@twin.org/core": "next",
 		"@twin.org/entity-storage-models": "next",
 		"@twin.org/nameof": "next",

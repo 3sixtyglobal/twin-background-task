@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.3...background-task-service-v0.0.3-next.4) (2026-02-23)
+
+
+### Miscellaneous Chores
+
+* **background-task-service:** Synchronize repo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.3 to 0.0.3-next.4
+
 ## [0.0.3-next.3](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.2...background-task-service-v0.0.3-next.3) (2026-01-07)
 
 

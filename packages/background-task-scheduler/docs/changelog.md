@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.3-next.3...background-task-scheduler-v0.0.3-next.4) (2026-02-23)
+
+
+### Features
+
+* multi-instance lock ([#39](https://github.com/twinfoundation/background-task/issues/39)) ([7dcd434](https://github.com/twinfoundation/background-task/commit/7dcd434da5e3d1645b6fcd19ed34be4e628e50de))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.3 to 0.0.3-next.4
+
 ## [0.0.3-next.3](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.3-next.2...background-task-scheduler-v0.0.3-next.3) (2026-01-07)
 
 
