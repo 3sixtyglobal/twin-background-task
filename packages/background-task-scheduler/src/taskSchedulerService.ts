@@ -6,8 +6,13 @@ import type {
 	ITaskSchedulerComponent
 } from "@twin.org/background-task-models";
 import { BaseError, ComponentFactory, Is } from "@twin.org/core";
+import {
+	EntityStorageConnectorFactory,
+	type IEntityStorageConnector
+} from "@twin.org/entity-storage-models";
 import type { ILoggingComponent } from "@twin.org/logging-models";
 import { nameof } from "@twin.org/nameof";
+import type { ScheduledTask } from "./entities/scheduledTask.js";
 import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions.js";
 
 /**
@@ -26,10 +31,22 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	private readonly _logging?: ILoggingComponent;
 
 	/**
+	 * The entity storage for the scheduled tasks.
+	 * @internal
+	 */
+	private readonly _scheduledTaskEntityStorageConnector: IEntityStorageConnector<ScheduledTask>;
+
+	/**
 	 * The interval in milliseconds at which the tasks are checked.
 	 * @internal
 	 */
-	private readonly _tickInterval: number;
+	private readonly _tickIntervalMs: number;
+
+	/**
+	 * The timeout in milliseconds after which an in-progress task is considered stalled.
+	 * @internal
+	 */
+	private readonly _stalledTaskTimeoutMs: number;
 
 	/**
 	 * The tasks that are scheduled.
@@ -43,6 +60,12 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	};
 
 	/**
+	 * The tasks currently running in this scheduler instance.
+	 * @internal
+	 */
+	private _runningTasks: string[];
+
+	/**
 	 * The timer for running scheduled tasks.
 	 * @internal
 	 */
@@ -53,9 +76,14 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * @param options The options for the scheduler.
 	 */
 	constructor(options?: ITaskSchedulerConstructorOptions) {
+		this._scheduledTaskEntityStorageConnector = EntityStorageConnectorFactory.get(
+			options?.scheduledTaskEntityStorageType ?? "scheduled-task"
+		);
 		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
 		this._tasks = {};
-		this._tickInterval = options?.config?.overrideInterval ?? 60 * 1000; // Default to 1 minute
+		this._runningTasks = [];
+		this._tickIntervalMs = options?.config?.intervalMs ?? 60 * 1000; // 1 minute
+		this._stalledTaskTimeoutMs = options?.config?.stalledTaskTimeoutMs ?? 5 * 60 * 1000; // 5 minutes
 	}
 
 	/**
@@ -73,6 +101,16 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 */
 	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		this.stopTimer();
+
+		// If we had any running tasks, we reset their last run time to allow them to be
+		// triggered by other components
+		for (const taskId of this._runningTasks) {
+			await this._scheduledTaskEntityStorageConnector.set({
+				id: taskId,
+				lastRunTime: undefined
+			});
+		}
+		this._runningTasks = [];
 	}
 
 	/**
@@ -186,7 +224,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			// Trigger immediately to catch up on any missed tasks
 			await this.triggerScheduledTasks();
 			// Set the timer to run at the specified interval
-			this._timer = setInterval(async () => this.triggerScheduledTasks(), this._tickInterval);
+			this._timer = setInterval(async () => this.triggerScheduledTasks(), this._tickIntervalMs);
 		}
 	}
 
@@ -213,19 +251,54 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 
 			for (const taskTime of task.times) {
 				if (!Is.empty(taskTime.nextTriggerTime) && taskTime.nextTriggerTime <= now) {
-					await this._logging?.log({
-						level: "info",
-						source: TaskSchedulerService.CLASS_NAME,
-						ts: Date.now(),
-						message: "taskTriggered",
-						data: {
-							id: taskId,
-							time: new Date(taskTime.nextTriggerTime).toISOString()
-						}
-					});
+					let taskStarted = false;
 
 					try {
-						await task.taskCallback();
+						const scheduledTask = await this._scheduledTaskEntityStorageConnector.get(taskId);
+						const lastRunTime = scheduledTask?.lastRunTime;
+						const taskInProgress = !Is.empty(lastRunTime);
+						const taskStalled = taskInProgress && now - lastRunTime >= this._stalledTaskTimeoutMs;
+
+						if (taskStalled) {
+							await this._logging?.log({
+								level: "warn",
+								source: TaskSchedulerService.CLASS_NAME,
+								ts: Date.now(),
+								message: "taskStalled",
+								data: {
+									id: taskId,
+									lastRunTime,
+									stalledForMs: now - (lastRunTime ?? now),
+									stalledTaskTimeoutMs: this._stalledTaskTimeoutMs
+								}
+							});
+						}
+
+						if (!taskInProgress || taskStalled) {
+							await this._logging?.log({
+								level: "info",
+								source: TaskSchedulerService.CLASS_NAME,
+								ts: Date.now(),
+								message: "taskTriggered",
+								data: {
+									id: taskId,
+									time: new Date(taskTime.nextTriggerTime).toISOString()
+								}
+							});
+
+							// Update the last run time of the task to prevent multiple triggers in case of long running tasks
+							await this._scheduledTaskEntityStorageConnector.set({
+								id: taskId,
+								lastRunTime: Date.now()
+							});
+
+							if (!this._runningTasks.includes(taskId)) {
+								this._runningTasks.push(taskId);
+							}
+
+							taskStarted = true;
+							await task.taskCallback();
+						}
 					} catch (error) {
 						await this._logging?.log({
 							level: "error",
@@ -237,6 +310,20 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 							},
 							error: BaseError.fromError(error)
 						});
+					} finally {
+						if (taskStarted) {
+							// Reset the last run time to allow future triggers, even if the task callback fails
+							await this._scheduledTaskEntityStorageConnector.set({
+								id: taskId,
+								lastRunTime: undefined
+							});
+
+							// Remove the task from the running tasks list
+							const index = this._runningTasks.indexOf(taskId);
+							if (index >= 0) {
+								this._runningTasks.splice(index, 1);
+							}
+						}
 					}
 
 					// If the intervals are empty, we do not recalculate a next run time

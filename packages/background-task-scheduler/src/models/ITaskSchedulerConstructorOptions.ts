@@ -13,6 +13,12 @@ export interface ITaskSchedulerConstructorOptions {
 	loggingComponentType?: string;
 
 	/**
+	 * The scheduled task entity storage connector type.
+	 * @default scheduled-task
+	 */
+	scheduledTaskEntityStorageType?: string;
+
+	/**
 	 * The configuration for the task scheduler.
 	 */
 	config?: ITaskSchedulerConfig;

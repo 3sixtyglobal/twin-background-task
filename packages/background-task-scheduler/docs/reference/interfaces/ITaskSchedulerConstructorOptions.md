@@ -18,6 +18,20 @@ logging
 
 ***
 
+### scheduledTaskEntityStorageType?
+
+> `optional` **scheduledTaskEntityStorageType**: `string`
+
+The scheduled task entity storage connector type.
+
+#### Default
+
+```ts
+scheduled-task
+```
+
+***
+
 ### config?
 
 > `optional` **config**: [`ITaskSchedulerConfig`](ITaskSchedulerConfig.md)
