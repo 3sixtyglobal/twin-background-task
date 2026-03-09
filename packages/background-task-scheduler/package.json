@@ -1,7 +1,7 @@
 {
 	"name": "@twin.org/background-task-scheduler",
 	"version": "0.0.3-next.4",
-	"description": "Background task scheduler",
+	"description": "Schedules background tasks for one-off or recurring execution windows",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/twinfoundation/background-task.git",

@@ -1,12 +1,14 @@
 # TWIN Background Task
 
-This mono-repository contains the packages to use with background tasks in TWIN applications.
+This repository provides a cohesive set of packages for modelling, executing, and scheduling background work in TWIN applications. Together, the packages help teams build dependable asynchronous workflows with consistent contracts and clear operational boundaries.
+
+The overall goal is to make background processing easier to integrate and maintain by separating concerns across contracts, execution services, and scheduling orchestration. This structure supports reuse, predictable behaviour, and simpler evolution of task-driven features.
 
 ## Packages
 
-- [background-task-models](packages/background-task-models/README.md) - Models which define the structure of the background task contracts.
-- [background-task-service](packages/background-task-service/README.md) - Background task component implementation using entity storage.
-- [background-task-scheduler](packages/background-task-scheduler/README.md) - Schedule tasks for a specific time or interval.
+- [background-task-models](packages/background-task-models/README.md) - Defines shared contracts and status models for background task workflows.
+- [background-task-service](packages/background-task-service/README.md) - Provides a storage-backed service for creating, managing, and executing background tasks.
+- [background-task-scheduler](packages/background-task-scheduler/README.md) - Schedules background tasks for one-off or recurring execution windows.
 
 ## Contributing
 

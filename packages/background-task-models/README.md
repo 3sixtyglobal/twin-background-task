@@ -1,6 +1,6 @@
 # TWIN Background Task Models
 
-Models which define the structure of the background task contracts.
+This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 

@@ -1,7 +1,7 @@
 {
 	"name": "@twin.org/background-task",
 	"version": "0.0.0",
-	"description": "Background Tasks",
+	"description": "Packages for modelling, executing, and scheduling background tasks in TWIN applications",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/twinfoundation/background-task.git"

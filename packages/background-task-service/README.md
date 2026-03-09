@@ -1,6 +1,6 @@
 # TWIN Background Task Service
 
-Background task service implementation using entity storage.
+This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 

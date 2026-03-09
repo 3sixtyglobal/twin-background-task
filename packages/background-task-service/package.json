@@ -1,7 +1,7 @@
 {
 	"name": "@twin.org/background-task-service",
 	"version": "0.0.3-next.4",
-	"description": "Background task component implementation using entity storage",
+	"description": "Provides a storage-backed service for creating, managing, and executing background tasks",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/twinfoundation/background-task.git",
