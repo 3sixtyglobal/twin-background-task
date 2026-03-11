@@ -1,4 +1,4 @@
-# @twin.org/background-task-models - Changelog
+# Changelog
 
 ## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-models-v0.0.3-next.3...background-task-models-v0.0.3-next.4) (2026-02-23)
 

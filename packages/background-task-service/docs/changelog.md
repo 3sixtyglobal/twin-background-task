@@ -42,4 +42,4 @@
   * dependencies
     * @twin.org/background-task-models bumped from 0.0.3-next.1 to 0.0.3-next.2
 
-## @twin.org/background-task-service - Changelog
+## Changelog

@@ -269,4 +269,4 @@
   * dependencies
     * @twin.org/background-task-models bumped from 0.0.1-next.18 to 0.0.1-next.19
 
-## @twin.org/background-task-scheduler - Changelog
+## Changelog
