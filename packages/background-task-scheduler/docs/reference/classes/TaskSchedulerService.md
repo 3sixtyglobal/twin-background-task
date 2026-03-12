@@ -28,7 +28,7 @@ The options for the scheduler.
 
 ## Properties
 
-### CLASS\_NAME
+### CLASS\_NAME {#class_name}
 
 > `readonly` `static` **CLASS\_NAME**: `string`
 
@@ -36,7 +36,7 @@ Runtime name for the class.
 
 ## Methods
 
-### className()
+### className() {#classname}
 
 > **className**(): `string`
 
@@ -54,7 +54,7 @@ The class name of the component.
 
 ***
 
-### stop()
+### stop() {#stop}
 
 > **stop**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
@@ -80,7 +80,7 @@ Nothing.
 
 ***
 
-### addTask()
+### addTask() {#addtask}
 
 > **addTask**(`taskId`, `times`, `taskCallback`): `Promise`\<`void`\>
 
@@ -118,7 +118,7 @@ Nothing.
 
 ***
 
-### removeTask()
+### removeTask() {#removetask}
 
 > **removeTask**(`taskId`): `Promise`\<`void`\>
 
@@ -144,7 +144,7 @@ Nothing.
 
 ***
 
-### tasksInfo()
+### tasksInfo() {#tasksinfo}
 
 > **tasksInfo**(): `Promise`\<`IScheduledTaskInfo`\>
 

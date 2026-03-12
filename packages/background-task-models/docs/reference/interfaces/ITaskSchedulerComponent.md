@@ -8,7 +8,7 @@ Interface describing a task scheduler.
 
 ## Methods
 
-### addTask()
+### addTask() {#addtask}
 
 > **addTask**(`taskId`, `times`, `taskCallback`): `Promise`\<`void`\>
 
@@ -42,7 +42,7 @@ Nothing.
 
 ***
 
-### removeTask()
+### removeTask() {#removetask}
 
 > **removeTask**(`taskId`): `Promise`\<`void`\>
 
@@ -64,7 +64,7 @@ Nothing.
 
 ***
 
-### tasksInfo()
+### tasksInfo() {#tasksinfo}
 
 > **tasksInfo**(): `Promise`\<[`IScheduledTaskInfo`](IScheduledTaskInfo.md)\>
 

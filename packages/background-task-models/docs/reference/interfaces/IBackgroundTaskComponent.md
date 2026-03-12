@@ -8,7 +8,7 @@ Interface describing a background task component.
 
 ## Methods
 
-### registerHandler()
+### registerHandler() {#registerhandler}
 
 > **registerHandler**\<`T`, `U`\>(`taskType`, `module`, `method`, `stateChangeCallback?`, `options?`): `Promise`\<`void`\>
 
@@ -86,7 +86,7 @@ Nothing.
 
 ***
 
-### unregisterHandler()
+### unregisterHandler() {#unregisterhandler}
 
 > **unregisterHandler**(`taskType`): `Promise`\<`void`\>
 
@@ -108,7 +108,7 @@ Nothing.
 
 ***
 
-### create()
+### create() {#create}
 
 > **create**\<`T`\>(`taskType`, `payload?`, `options?`): `Promise`\<`string`\>
 
@@ -164,7 +164,7 @@ The id of the created task.
 
 ***
 
-### get()
+### get() {#get}
 
 > **get**\<`T`, `U`\>(`taskId`): `Promise`\<[`IBackgroundTask`](IBackgroundTask.md)\<`T`, `U`\> \| `undefined`\>
 
@@ -196,7 +196,7 @@ The details of the task.
 
 ***
 
-### retry()
+### retry() {#retry}
 
 > **retry**(`taskId`): `Promise`\<`void`\>
 
@@ -218,7 +218,7 @@ Nothing.
 
 ***
 
-### remove()
+### remove() {#remove}
 
 > **remove**(`taskId`): `Promise`\<`void`\>
 
@@ -240,7 +240,7 @@ Nothing.
 
 ***
 
-### cancel()
+### cancel() {#cancel}
 
 > **cancel**(`taskId`): `Promise`\<`void`\>
 
@@ -262,7 +262,7 @@ Nothing.
 
 ***
 
-### query()
+### query() {#query}
 
 > **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `limit?`): `Promise`\<\{ `entities`: [`IBackgroundTask`](IBackgroundTask.md)\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
 

@@ -28,7 +28,7 @@ The options for the service.
 
 ## Properties
 
-### CLASS\_NAME
+### CLASS\_NAME {#class_name}
 
 > `readonly` `static` **CLASS\_NAME**: `string`
 
@@ -36,7 +36,7 @@ Runtime name for the class.
 
 ***
 
-### NAMESPACE
+### NAMESPACE {#namespace}
 
 > `readonly` `static` **NAMESPACE**: `string` = `"entity-storage"`
 
@@ -44,7 +44,7 @@ The namespace supported by the background task.
 
 ## Methods
 
-### className()
+### className() {#classname}
 
 > **className**(): `string`
 
@@ -62,7 +62,7 @@ The class name of the component.
 
 ***
 
-### start()
+### start() {#start}
 
 > **start**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
@@ -88,7 +88,7 @@ Nothing.
 
 ***
 
-### stop()
+### stop() {#stop}
 
 > **stop**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
 
@@ -114,7 +114,7 @@ Nothing.
 
 ***
 
-### registerHandler()
+### registerHandler() {#registerhandler}
 
 > **registerHandler**\<`T`, `U`\>(`taskType`, `module`, `method`, `stateChangeCallback?`, `options?`): `Promise`\<`void`\>
 
@@ -196,7 +196,7 @@ Nothing.
 
 ***
 
-### unregisterHandler()
+### unregisterHandler() {#unregisterhandler}
 
 > **unregisterHandler**(`taskType`): `Promise`\<`void`\>
 
@@ -220,7 +220,7 @@ The type of the task handler to remove.
 
 ***
 
-### create()
+### create() {#create}
 
 > **create**\<`T`\>(`taskType`, `payload?`, `options?`): `Promise`\<`string`\>
 
@@ -280,7 +280,7 @@ The id of the created task.
 
 ***
 
-### get()
+### get() {#get}
 
 > **get**\<`T`, `U`\>(`taskId`): `Promise`\<`IBackgroundTask`\<`T`, `U`\> \| `undefined`\>
 
@@ -316,7 +316,7 @@ The details of the task.
 
 ***
 
-### retry()
+### retry() {#retry}
 
 > **retry**(`taskId`): `Promise`\<`void`\>
 
@@ -342,7 +342,7 @@ Nothing.
 
 ***
 
-### remove()
+### remove() {#remove}
 
 > **remove**(`taskId`): `Promise`\<`void`\>
 
@@ -368,7 +368,7 @@ Nothing.
 
 ***
 
-### cancel()
+### cancel() {#cancel}
 
 > **cancel**(`taskId`): `Promise`\<`void`\>
 
@@ -394,7 +394,7 @@ Nothing.
 
 ***
 
-### query()
+### query() {#query}
 
 > **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `limit?`): `Promise`\<\{ `entities`: `IBackgroundTask`\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
 

@@ -14,7 +14,7 @@ Class defining a scheduled task.
 
 ## Properties
 
-### id
+### id {#id}
 
 > **id**: `string`
 
@@ -22,7 +22,7 @@ The id.
 
 ***
 
-### lastRunTime?
+### lastRunTime? {#lastruntime}
 
 > `optional` **lastRunTime**: `number`
 

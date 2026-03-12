@@ -6,31 +6,31 @@ Task statuses.
 
 ## Type Declaration
 
-### Pending
+### Pending {#pending}
 
 > `readonly` **Pending**: `"pending"` = `"pending"`
 
 Pending.
 
-### Processing
+### Processing {#processing}
 
 > `readonly` **Processing**: `"processing"` = `"processing"`
 
 Processing.
 
-### Success
+### Success {#success}
 
 > `readonly` **Success**: `"success"` = `"success"`
 
 Success.
 
-### Failed
+### Failed {#failed}
 
 > `readonly` **Failed**: `"failed"` = `"failed"`
 
 Failed.
 
-### Cancelled
+### Cancelled {#cancelled}
 
 > `readonly` **Cancelled**: `"cancelled"` = `"cancelled"`
 
