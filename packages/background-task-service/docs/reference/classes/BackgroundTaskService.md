@@ -416,9 +416,9 @@ The status of the task to get.
 
 ##### sortProperty?
 
-The property to sort by, defaults to dateCreated.
+`"dateCreated"` \| `"dateModified"` \| `"dateCompleted"` \| `"status"`
 
-`"dateCreated"` | `"dateModified"` | `"dateCompleted"` | `"status"`
+The property to sort by, defaults to dateCreated.
 
 ##### sortDirection?
 

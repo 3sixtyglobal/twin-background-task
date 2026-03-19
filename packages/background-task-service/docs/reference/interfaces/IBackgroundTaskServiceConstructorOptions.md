@@ -6,22 +6,34 @@ Options for the background task service constructor.
 
 ### backgroundTaskEntityStorageType? {#backgroundtaskentitystoragetype}
 
-> `optional` **backgroundTaskEntityStorageType**: `string`
+> `optional` **backgroundTaskEntityStorageType?**: `string`
 
 The background task entity storage connector type.
+
+#### Default
+
+```ts
+background-task
+```
 
 ***
 
 ### loggingComponentType? {#loggingcomponenttype}
 
-> `optional` **loggingComponentType**: `string`
+> `optional` **loggingComponentType?**: `string`
 
 The logging component type.
+
+#### Default
+
+```ts
+logging
+```
 
 ***
 
 ### config? {#config}
 
-> `optional` **config**: [`IBackgroundTaskServiceConfig`](IBackgroundTaskServiceConfig.md)
+> `optional` **config?**: [`IBackgroundTaskServiceConfig`](IBackgroundTaskServiceConfig.md)
 
 The configuration for the service.

@@ -40,7 +40,7 @@ The thread id for the task.
 
 ### retryInterval? {#retryinterval}
 
-> `optional` **retryInterval**: `number`
+> `optional` **retryInterval?**: `number`
 
 The retry interval in milliseconds, undefined if default scheduling.
 
@@ -48,7 +48,7 @@ The retry interval in milliseconds, undefined if default scheduling.
 
 ### retriesRemaining? {#retriesremaining}
 
-> `optional` **retriesRemaining**: `number`
+> `optional` **retriesRemaining?**: `number`
 
 The number of retries remaining, undefined if infinite retries.
 
@@ -72,7 +72,7 @@ The date the task was last modified.
 
 ### dateNextProcess? {#datenextprocess}
 
-> `optional` **dateNextProcess**: `string`
+> `optional` **dateNextProcess?**: `string`
 
 The date the task is next to be processed.
 
@@ -80,7 +80,7 @@ The date the task is next to be processed.
 
 ### dateCancelled? {#datecancelled}
 
-> `optional` **dateCancelled**: `string`
+> `optional` **dateCancelled?**: `string`
 
 The date the task was cancelled.
 
@@ -88,7 +88,7 @@ The date the task was cancelled.
 
 ### dateCompleted? {#datecompleted}
 
-> `optional` **dateCompleted**: `string`
+> `optional` **dateCompleted?**: `string`
 
 The date the task was completed.
 
@@ -96,7 +96,7 @@ The date the task was completed.
 
 ### retainFor? {#retainfor}
 
-> `optional` **retainFor**: `number`
+> `optional` **retainFor?**: `number`
 
 The amount of time in milliseconds to retain the task after completion.
 
@@ -104,7 +104,7 @@ The amount of time in milliseconds to retain the task after completion.
 
 ### retainUntil? {#retainuntil}
 
-> `optional` **retainUntil**: `number`
+> `optional` **retainUntil?**: `number`
 
 The timestamp of when to retain the task until.
 
@@ -120,7 +120,7 @@ The status of the task.
 
 ### payload? {#payload}
 
-> `optional` **payload**: `unknown`
+> `optional` **payload?**: `unknown`
 
 The payload to execute the task with.
 
@@ -128,7 +128,7 @@ The payload to execute the task with.
 
 ### result? {#result}
 
-> `optional` **result**: `unknown`
+> `optional` **result?**: `unknown`
 
 The result of the execution.
 
@@ -136,7 +136,7 @@ The result of the execution.
 
 ### error? {#error}
 
-> `optional` **error**: `IError`
+> `optional` **error?**: `IError`
 
 The error at last execution.
 
@@ -144,6 +144,6 @@ The error at last execution.
 
 ### contextIds? {#contextids}
 
-> `optional` **contextIds**: `IContextIds`
+> `optional` **contextIds?**: `IContextIds`
 
 The context ids that were set at the point the task was created.

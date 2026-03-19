@@ -6,7 +6,7 @@ Interface for the background task service.
 
 ### taskInterval? {#taskinterval}
 
-> `optional` **taskInterval**: `number`
+> `optional` **taskInterval?**: `number`
 
 The default interval to leave between tasks in milliseconds, defaults to 100ms.
 
@@ -14,7 +14,7 @@ The default interval to leave between tasks in milliseconds, defaults to 100ms.
 
 ### retryInterval? {#retryinterval}
 
-> `optional` **retryInterval**: `number`
+> `optional` **retryInterval?**: `number`
 
 The default retry interval to leave between tasks in milliseconds, defaults to 5000ms.
 
@@ -22,7 +22,7 @@ The default retry interval to leave between tasks in milliseconds, defaults to 5
 
 ### cleanupInterval? {#cleanupinterval}
 
-> `optional` **cleanupInterval**: `number`
+> `optional` **cleanupInterval?**: `number`
 
 The default cleanup interval for removing retained tasks, defaults to 120000ms.
 
@@ -30,6 +30,6 @@ The default cleanup interval for removing retained tasks, defaults to 120000ms.
 
 ### maxSystemWorkerCount? {#maxsystemworkercount}
 
-> `optional` **maxSystemWorkerCount**: `number`
+> `optional` **maxSystemWorkerCount?**: `number`
 
 The maximum number of workers to use for processing tasks, defaults to the number of CPU cores.

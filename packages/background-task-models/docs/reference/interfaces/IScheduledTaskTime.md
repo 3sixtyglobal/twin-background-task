@@ -6,7 +6,7 @@ Interface describing a scheduled task time.
 
 ### nextTriggerTime? {#nexttriggertime}
 
-> `optional` **nextTriggerTime**: `number`
+> `optional` **nextTriggerTime?**: `number`
 
 The date/time to start the task, if not provided defaults to first interval from now.
 
@@ -14,7 +14,7 @@ The date/time to start the task, if not provided defaults to first interval from
 
 ### intervalDays? {#intervaldays}
 
-> `optional` **intervalDays**: `number`
+> `optional` **intervalDays?**: `number`
 
 The interval in days to repeat the task, if no intervals are set the task will not repeat.
 
@@ -22,7 +22,7 @@ The interval in days to repeat the task, if no intervals are set the task will n
 
 ### intervalHours? {#intervalhours}
 
-> `optional` **intervalHours**: `number`
+> `optional` **intervalHours?**: `number`
 
 The interval in hours to repeat the task, if no intervals are set the task will not repeat.
 
@@ -30,6 +30,6 @@ The interval in hours to repeat the task, if no intervals are set the task will 
 
 ### intervalMinutes? {#intervalminutes}
 
-> `optional` **intervalMinutes**: `number`
+> `optional` **intervalMinutes?**: `number`
 
 The interval in minutes to repeat the task, if no intervals are set the task will not repeat.

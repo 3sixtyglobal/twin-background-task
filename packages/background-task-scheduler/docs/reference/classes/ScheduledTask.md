@@ -24,6 +24,6 @@ The id.
 
 ### lastRunTime? {#lastruntime}
 
-> `optional` **lastRunTime**: `number`
+> `optional` **lastRunTime?**: `number`
 
 The last run time of the task, if undefined waiting for next run.

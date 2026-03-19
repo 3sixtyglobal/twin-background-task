@@ -40,7 +40,7 @@ The thread id for the task.
 
 ### retryInterval? {#retryinterval}
 
-> `optional` **retryInterval**: `number`
+> `optional` **retryInterval?**: `number`
 
 The retry interval in milliseconds, undefined if default scheduling.
 
@@ -48,7 +48,7 @@ The retry interval in milliseconds, undefined if default scheduling.
 
 ### retriesRemaining? {#retriesremaining}
 
-> `optional` **retriesRemaining**: `number`
+> `optional` **retriesRemaining?**: `number`
 
 The number of retries remaining, undefined if infinite retries.
 
@@ -72,7 +72,7 @@ The date the task was last modified.
 
 ### dateCompleted? {#datecompleted}
 
-> `optional` **dateCompleted**: `string`
+> `optional` **dateCompleted?**: `string`
 
 The date the task was complete.
 
@@ -80,7 +80,7 @@ The date the task was complete.
 
 ### dateCancelled? {#datecancelled}
 
-> `optional` **dateCancelled**: `string`
+> `optional` **dateCancelled?**: `string`
 
 The date the task was cancelled.
 
@@ -88,7 +88,7 @@ The date the task was cancelled.
 
 ### dateRetainUntil? {#dateretainuntil}
 
-> `optional` **dateRetainUntil**: `string`
+> `optional` **dateRetainUntil?**: `string`
 
 The date until when to retain.
 
@@ -104,7 +104,7 @@ The status of the task.
 
 ### payload? {#payload}
 
-> `optional` **payload**: `T`
+> `optional` **payload?**: `T`
 
 The payload to execute the task with.
 
@@ -112,7 +112,7 @@ The payload to execute the task with.
 
 ### result? {#result}
 
-> `optional` **result**: `U`
+> `optional` **result?**: `U`
 
 The result of the execution.
 
@@ -120,6 +120,6 @@ The result of the execution.
 
 ### error? {#error}
 
-> `optional` **error**: `IError`
+> `optional` **error?**: `IError`
 
 The error at last execution.
