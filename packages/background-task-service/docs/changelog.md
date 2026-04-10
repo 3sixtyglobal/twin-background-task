@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.5](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.4...background-task-service-v0.0.3-next.5) (2026-04-10)
+
+
+### Features
+
+* switch random ids to uuidv7 ([#41](https://github.com/twinfoundation/background-task/issues/41)) ([707b4aa](https://github.com/twinfoundation/background-task/commit/707b4aab8c1c852a193b5f97947ffed0dfe15441))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.4 to 0.0.3-next.5
+
 ## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.3...background-task-service-v0.0.3-next.4) (2026-02-23)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.3-next.5](https://github.com/twinfoundation/background-task/compare/background-task-models-v0.0.3-next.4...background-task-models-v0.0.3-next.5) (2026-04-10)
+
+
+### Miscellaneous Chores
+
+* **background-task-models:** Synchronize repo versions
+
 ## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-models-v0.0.3-next.3...background-task-models-v0.0.3-next.4) (2026-02-23)
 
 

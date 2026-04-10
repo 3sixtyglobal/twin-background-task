@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.5](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.3-next.4...background-task-scheduler-v0.0.3-next.5) (2026-04-10)
+
+
+### Miscellaneous Chores
+
+* **background-task-scheduler:** Synchronize repo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.4 to 0.0.3-next.5
+
 ## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-scheduler-v0.0.3-next.3...background-task-scheduler-v0.0.3-next.4) (2026-02-23)
 
 
