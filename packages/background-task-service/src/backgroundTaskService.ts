@@ -9,8 +9,9 @@ import {
 } from "@twin.org/background-task-models";
 import { ContextIdStore } from "@twin.org/context";
 import {
+	BaseError,
+	Coerce,
 	ComponentFactory,
-	Converter,
 	GeneralError,
 	Guards,
 	Is,
@@ -19,9 +20,7 @@ import {
 	RandomHelper,
 	StringHelper,
 	Urn,
-	Validation,
-	BaseError,
-	Coerce
+	Validation
 } from "@twin.org/core";
 import { EngineCoreFactory } from "@twin.org/engine-models";
 import {
@@ -408,7 +407,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			validationErrors
 		);
 
-		const id = Converter.bytesToHex(RandomHelper.generate(16));
+		const id = RandomHelper.generateUuidV7("compact");
 
 		const now = new Date(Date.now()).toISOString();
 
@@ -678,7 +677,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 									// finishes processing
 								}
 							} else {
-								const workerId = Converter.bytesToHex(RandomHelper.generate(8));
+								const workerId = RandomHelper.generateUuidV7("compact");
 								const newWorker: IBackgroundTaskWorker = {
 									workerId
 								};

@@ -3,7 +3,7 @@
 import os from "node:os";
 import path from "node:path";
 import { ContextIdStore } from "@twin.org/context";
-import { RandomHelper } from "@twin.org/core";
+import { Converter, RandomHelper } from "@twin.org/core";
 import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
 import { SortDirection } from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
@@ -55,9 +55,9 @@ describe("BackgroundTaskService", () => {
 		const mockRandom = vi.fn();
 
 		let i = 0;
-		mockRandom.mockImplementation(length => new Uint8Array(length).fill(i++));
+		mockRandom.mockImplementation(() => Converter.bytesToHex(new Uint8Array(16).fill(i++)));
 
-		RandomHelper.generate = mockRandom;
+		RandomHelper.generateUuidV7 = mockRandom;
 	});
 
 	beforeEach(() => {
