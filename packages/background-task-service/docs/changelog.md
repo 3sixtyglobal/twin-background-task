@@ -1,11 +1,11 @@
 # Changelog
 
-## [0.0.3-next.5](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.4...background-task-service-v0.0.3-next.5) (2026-04-10)
+## [0.0.3-next.5](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.4...background-task-service-v0.0.3-next.5) (2026-04-10)
 
 
 ### Features
 
-* switch random ids to uuidv7 ([#41](https://github.com/twinfoundation/background-task/issues/41)) ([707b4aa](https://github.com/twinfoundation/background-task/commit/707b4aab8c1c852a193b5f97947ffed0dfe15441))
+* switch random ids to uuidv7 ([#41](https://github.com/iotaledger/twin-background-task/issues/41)) ([707b4aa](https://github.com/iotaledger/twin-background-task/commit/707b4aab8c1c852a193b5f97947ffed0dfe15441))
 
 
 ### Dependencies
@@ -14,7 +14,7 @@
   * dependencies
     * @twin.org/background-task-models bumped from 0.0.3-next.4 to 0.0.3-next.5
 
-## [0.0.3-next.4](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.3...background-task-service-v0.0.3-next.4) (2026-02-23)
+## [0.0.3-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.3...background-task-service-v0.0.3-next.4) (2026-02-23)
 
 
 ### Miscellaneous Chores
@@ -28,12 +28,12 @@
   * dependencies
     * @twin.org/background-task-models bumped from 0.0.3-next.3 to 0.0.3-next.4
 
-## [0.0.3-next.3](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.2...background-task-service-v0.0.3-next.3) (2026-01-07)
+## [0.0.3-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.2...background-task-service-v0.0.3-next.3) (2026-01-07)
 
 
 ### Features
 
-* add additional logging on failure ([#36](https://github.com/twinfoundation/background-task/issues/36)) ([61c3672](https://github.com/twinfoundation/background-task/commit/61c3672d446f782959b5c93305147130b314fa01))
+* add additional logging on failure ([#36](https://github.com/iotaledger/twin-background-task/issues/36)) ([61c3672](https://github.com/iotaledger/twin-background-task/commit/61c3672d446f782959b5c93305147130b314fa01))
 
 
 ### Dependencies
@@ -42,12 +42,12 @@
   * dependencies
     * @twin.org/background-task-models bumped from 0.0.3-next.2 to 0.0.3-next.3
 
-## [0.0.3-next.2](https://github.com/twinfoundation/background-task/compare/background-task-service-v0.0.3-next.1...background-task-service-v0.0.3-next.2) (2025-11-28)
+## [0.0.3-next.2](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.1...background-task-service-v0.0.3-next.2) (2025-11-28)
 
 
 ### Features
 
-* add multi-threading ([#32](https://github.com/twinfoundation/background-task/issues/32)) ([60fb5ef](https://github.com/twinfoundation/background-task/commit/60fb5ef55d3f7dc46a27c38d4497812d80b98e3b))
+* add multi-threading ([#32](https://github.com/iotaledger/twin-background-task/issues/32)) ([60fb5ef](https://github.com/iotaledger/twin-background-task/commit/60fb5ef55d3f7dc46a27c38d4497812d80b98e3b))
 
 
 ### Dependencies
