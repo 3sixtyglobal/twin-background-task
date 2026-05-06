@@ -4,7 +4,7 @@
 	"description": "Provides a storage-backed service for creating, managing, and executing background tasks",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/twinfoundation/background-task.git",
+		"url": "git+https://github.com/iotaledger/background-task.git",
 		"directory": "packages/background-task-service"
 	},
 	"author": "martyn.janes@iota.org",
@@ -91,7 +91,7 @@
 		"integration"
 	],
 	"bugs": {
-		"url": "git+https://github.com/twinfoundation/background-task/issues"
+		"url": "git+https://github.com/iotaledger/background-task/issues"
 	},
 	"homepage": "https://twindev.org"
 }

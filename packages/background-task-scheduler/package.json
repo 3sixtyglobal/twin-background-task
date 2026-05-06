@@ -4,7 +4,7 @@
 	"description": "Schedules background tasks for one-off or recurring execution windows",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/twinfoundation/background-task.git",
+		"url": "git+https://github.com/iotaledger/background-task.git",
 		"directory": "packages/background-task-scheduler"
 	},
 	"author": "martyn.janes@iota.org",
@@ -79,7 +79,7 @@
 		"async"
 	],
 	"bugs": {
-		"url": "git+https://github.com/twinfoundation/background-task/issues"
+		"url": "git+https://github.com/iotaledger/background-task/issues"
 	},
 	"homepage": "https://twindev.org"
 }
