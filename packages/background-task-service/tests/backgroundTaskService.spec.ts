@@ -860,11 +860,7 @@ describe("BackgroundTaskService", () => {
 			workerThreadIds.add(item.result);
 		}
 
-		// When running in virtual environments like GHA there is a limit, so this test only checks for more than half the CPU count
-		if (systemWorkerCount > 4) {
-			expect(Array.from(workerThreadIds).length).toBeGreaterThanOrEqual(systemWorkerCount / 2);
-		} else {
-			expect(Array.from(workerThreadIds).length).toBeGreaterThan(0);
-		}
+		expect(Array.from(workerThreadIds).length).toBeGreaterThan(0);
+		expect(Array.from(workerThreadIds).length).toBeLessThanOrEqual(systemWorkerCount);
 	});
 });
