@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.6](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.5...background-task-scheduler-v0.0.3-next.6) (2026-05-11)
+
+
+### Features
+
+* typescript 6 update ([e3f2727](https://github.com/iotaledger/twin-background-task/commit/e3f272783e0de7cf4d31f3e84a8e6f5ff633961b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.5 to 0.0.3-next.6
+
 ## [0.0.3-next.5](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.4...background-task-scheduler-v0.0.3-next.5) (2026-04-10)
 
 
