@@ -741,7 +741,7 @@ describe("BackgroundTaskService", () => {
 
 		const workerThreadIds = new Set();
 		for (const item of store) {
-			workerThreadIds.add(item.result as number);
+			workerThreadIds.add(item.result);
 		}
 		expect(Array.from(workerThreadIds).length).toEqual(5);
 	});
@@ -820,7 +820,7 @@ describe("BackgroundTaskService", () => {
 		const store = backgroundTaskEntityStorageConnector.getStore();
 		const workerThreadIds = new Set();
 		for (const item of store) {
-			workerThreadIds.add(item.result as number);
+			workerThreadIds.add(item.result);
 		}
 		expect(Array.from(workerThreadIds).length).toEqual(2);
 	});
@@ -857,7 +857,7 @@ describe("BackgroundTaskService", () => {
 		const store = backgroundTaskEntityStorageConnector.getStore();
 		const workerThreadIds = new Set();
 		for (const item of store) {
-			workerThreadIds.add(item.result as number);
+			workerThreadIds.add(item.result);
 		}
 
 		// When running in virtual environments like GHA there is a limit, so this test only checks for more than half the CPU count
