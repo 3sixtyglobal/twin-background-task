@@ -116,8 +116,6 @@ describe("BackgroundTaskService", () => {
 					counter: 0
 				},
 				retainFor: 0,
-				retriesRemaining: undefined,
-				retryInterval: undefined,
 				status: "pending",
 				threadId: "main",
 				type: "my-type"
@@ -234,6 +232,7 @@ describe("BackgroundTaskService", () => {
 		if (store[0]?.payload) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(store[0].payload as any).throw = false;
+			await backgroundTaskEntityStorageConnector.set(store[0]);
 		}
 
 		const task = await backgroundTaskConnector.get(
@@ -466,6 +465,7 @@ describe("BackgroundTaskService", () => {
 		if (store2[2]?.payload) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(store2[2].payload as any).throw = false;
+			await backgroundTaskEntityStorageConnector.set(store2[2]);
 		}
 		await waitForStatus("success", 2);
 
