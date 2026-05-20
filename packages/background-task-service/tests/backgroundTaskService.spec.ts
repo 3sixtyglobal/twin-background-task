@@ -600,7 +600,7 @@ describe("BackgroundTaskService", () => {
 		expect(store.length).toEqual(0);
 	});
 
-	test("can not cleanup retained items when equalling their retained date", async () => {
+	test("can not cleanup retained items when their retained date has not yet passed", async () => {
 		const backgroundTaskConnector = new BackgroundTaskService({
 			config: { taskInterval: 1000 }
 		});
@@ -619,7 +619,7 @@ describe("BackgroundTaskService", () => {
 			payload: {
 				counter: 0
 			},
-			retainUntil: now
+			retainUntil: now + 5000
 		});
 
 		await backgroundTaskConnector.start();
