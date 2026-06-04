@@ -740,6 +740,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param taskHandler The background task handler.
 	 * @param worker The background task worker.
 	 * @param taskType The type of the task to process.
+	 * @param nextTask The next background task to process.
 	 * @returns Nothing.
 	 * @internal
 	 */
@@ -967,7 +968,6 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Schedule the next processing cycle for a task type.
 	 * @param taskType The type of the task to schedule.
-	 * @returns Nothing.
 	 * @internal
 	 */
 	private scheduleNextTaskProcessing(taskType: string): void {
