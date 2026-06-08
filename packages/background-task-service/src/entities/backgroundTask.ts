@@ -72,7 +72,12 @@ export class BackgroundTask {
 	/**
 	 * The date the task was completed.
 	 */
-	@property({ type: "string", format: "date-time", optional: true })
+	@property({
+		type: "string",
+		format: "date-time",
+		optional: true,
+		sortDirection: SortDirection.Descending
+	})
 	public dateCompleted?: string;
 
 	/**
