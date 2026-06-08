@@ -9,13 +9,14 @@ import { TaskSchedulerService } from "../src/taskSchedulerService.js";
 
 let scheduledTaskEntityStorageConnector: MemoryEntityStorageConnector<ScheduledTask>;
 
+const realDateNow = Date.now.bind(Date);
+
 describe("TaskSchedulerService", () => {
 	beforeEach(() => {
-		const original = Date.now;
-		const start = original();
+		const start = realDateNow();
 		const mockNow = vi.fn();
 		mockNow.mockImplementation(() => {
-			const tick = original();
+			const tick = realDateNow();
 			return Math.floor((tick - start) / 100) * 100;
 		});
 		Date.now = mockNow;
@@ -30,6 +31,10 @@ describe("TaskSchedulerService", () => {
 			"scheduled-task",
 			() => scheduledTaskEntityStorageConnector
 		);
+	});
+
+	afterEach(() => {
+		Date.now = realDateNow;
 	});
 
 	test("can construct with dependencies", async () => {

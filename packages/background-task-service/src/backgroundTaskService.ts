@@ -866,102 +866,121 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		err?: Error
 	): Promise<void> {
 		const worker = this._workers[workerId];
-		if (!Is.empty(worker)) {
-			const task = worker.worker.task;
+		if (Is.empty(worker)) {
+			return;
+		}
 
-			// The task should always be set here, but just in case we check
-			if (Is.object(task)) {
-				if (Is.empty(err)) {
-					// No error so set the task state to success and clear
-					// any retry information
-					task.result = result;
-					task.status = TaskStatus.Success;
-					task.dateNextProcess = undefined;
+		const task = worker.worker.task;
+
+		// The task should always be set here, but just in case we check
+		if (!Is.object(task)) {
+			return;
+		}
+
+		const taskType = task.type;
+
+		try {
+			if (Is.empty(err)) {
+				// No error so set the task state to success and clear
+				// any retry information
+				task.result = result;
+				task.status = TaskStatus.Success;
+				task.dateNextProcess = undefined;
+				task.dateCompleted = new Date(Date.now()).toISOString();
+				delete task.retriesRemaining;
+				delete task.retryInterval;
+				delete task.error;
+			} else {
+				// There was an error from the task processing, so set the error information
+				let taskError = BaseError.fromError(err).toJsonObject(true);
+				if (
+					taskError.message === `${nameofCamelCase(ModuleHelper)}.resultError` &&
+					!Is.empty(taskError.cause)
+				) {
+					taskError = BaseError.fromError(taskError.cause).toJsonObject(true);
+				}
+
+				task.error = taskError;
+
+				// If there are retries remaining, set the task to pending and schedule the next retry.
+				if (Is.integer(task.retriesRemaining) && task.retriesRemaining > 0) {
+					task.status = TaskStatus.Pending;
+					task.retriesRemaining--;
+					const nextRetryMs: number = task.retryInterval ?? this._retryInterval;
+					const now: number = new Date(task.dateModified).getTime();
+					task.dateNextProcess = new Date(now + nextRetryMs).toISOString();
+				} else {
+					// Otherwise set the task to failed.
+					task.status = TaskStatus.Failed;
 					task.dateCompleted = new Date(Date.now()).toISOString();
-					delete task.retriesRemaining;
-					delete task.retryInterval;
-					delete task.error;
-				} else {
-					// There was an error from the task processing, so set the error information
-					let taskError = BaseError.fromError(err).toJsonObject(true);
-					if (
-						taskError.message === `${nameofCamelCase(ModuleHelper)}.resultError` &&
-						!Is.empty(taskError.cause)
-					) {
-						taskError = BaseError.fromError(taskError.cause).toJsonObject(true);
-					}
-
-					task.error = taskError;
-
-					// If there are retries remaining, set the task to pending and schedule the next retry.
-					if (Is.integer(task.retriesRemaining) && task.retriesRemaining > 0) {
-						task.status = TaskStatus.Pending;
-						task.retriesRemaining--;
-						const nextRetryMs: number = task.retryInterval ?? this._retryInterval;
-						const now: number = new Date(task.dateModified).getTime();
-						task.dateNextProcess = new Date(now + nextRetryMs).toISOString();
-					} else {
-						// Otherwise set the task to failed.
-						task.status = TaskStatus.Failed;
-						task.dateCompleted = new Date(Date.now()).toISOString();
-						task.dateNextProcess = undefined;
-					}
+					task.dateNextProcess = undefined;
 				}
-
-				if (task.status === TaskStatus.Pending) {
-					// If it's pending, just update the task for the next retry
-					await this._backgroundTaskEntityStorageConnector.set(task);
-				} else {
-					await this.processRetention(task);
-				}
-
-				if (task.status === TaskStatus.Failed) {
-					await this._logging?.log({
-						level: "error",
-						source: BackgroundTaskService.CLASS_NAME,
-						ts: Date.now(),
-						message: "completeFailed",
-						data: {
-							id: task.id,
-							type: task.type,
-							status: task.status
-						},
-						error: BaseError.fromError(err)
-					});
-				} else {
-					await this._logging?.log({
-						level: "info",
-						source: BackgroundTaskService.CLASS_NAME,
-						ts: Date.now(),
-						message: "complete",
-						data: {
-							id: task.id,
-							type: task.type,
-							status: task.status
-						}
-					});
-				}
-
-				await this.fireStateChanged(task);
-
-				// Clear the task from the work so that it can be re-used for the next task
-				worker.worker.task = undefined;
-
-				// If the terminate when idle option is set for the pool, we need to terminate the worker
-				// and remove it from the pool
-				if (taskHandler.idleShutdownTimeout >= 0 && task.status !== TaskStatus.Pending) {
-					if (taskHandler.idleShutdownTimeout > 0) {
-						worker.worker.idleTimerId = setTimeout(
-							async () => this.shutdownIdleThread(taskHandler, task, worker.worker),
-							taskHandler.idleShutdownTimeout
-						);
-					} else {
-						await this.shutdownIdleThread(taskHandler, task, worker.worker);
-					}
-				}
-
-				this.scheduleNextTaskProcessing(task.type);
 			}
+
+			if (task.status === TaskStatus.Pending) {
+				// If it's pending, just update the task for the next retry
+				await this._backgroundTaskEntityStorageConnector.set(task);
+			} else {
+				await this.processRetention(task);
+			}
+
+			if (task.status === TaskStatus.Failed) {
+				await this._logging?.log({
+					level: "error",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "completeFailed",
+					data: {
+						id: task.id,
+						type: task.type,
+						status: task.status
+					},
+					error: BaseError.fromError(err)
+				});
+			} else {
+				await this._logging?.log({
+					level: "info",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "complete",
+					data: {
+						id: task.id,
+						type: task.type,
+						status: task.status
+					}
+				});
+			}
+
+			await this.fireStateChanged(task);
+
+			// If the terminate when idle option is set for the pool, we need to terminate the worker
+			// and remove it from the pool
+			if (taskHandler.idleShutdownTimeout >= 0 && task.status !== TaskStatus.Pending) {
+				if (taskHandler.idleShutdownTimeout > 0) {
+					worker.worker.idleTimerId = setTimeout(
+						async () => this.shutdownIdleThread(taskHandler, task, worker.worker),
+						taskHandler.idleShutdownTimeout
+					);
+				} else {
+					await this.shutdownIdleThread(taskHandler, task, worker.worker);
+				}
+			}
+		} catch (error) {
+			await this._logging?.log({
+				level: "error",
+				source: BackgroundTaskService.CLASS_NAME,
+				ts: Date.now(),
+				message: "taskFinishedProcessingFailed",
+				data: {
+					id: task.id,
+					type: taskHandler.processingMethod
+				},
+				error: BaseError.fromError(error)
+			});
+		} finally {
+			// Clear the task from the worker so that it can be re-used for the next task
+			worker.worker.task = undefined;
+			this.scheduleNextTaskProcessing(taskType);
 		}
 	}
 
@@ -1020,7 +1039,25 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		if (!Is.empty(taskHandler)) {
 			const stateChangeCallback = taskHandler.stateChangeCallback;
 			if (!Is.empty(stateChangeCallback)) {
-				await stateChangeCallback(this.mapEntityToModel(task));
+				const contextIds = task.contextIds ?? {};
+				try {
+					await ContextIdStore.run(contextIds, async () => {
+						await stateChangeCallback(this.mapEntityToModel(task));
+					});
+				} catch (error) {
+					await this._logging?.log({
+						level: "error",
+						source: BackgroundTaskService.CLASS_NAME,
+						ts: Date.now(),
+						message: "stateChangeCallbackFailed",
+						data: {
+							id: task.id,
+							type: task.type,
+							status: task.status
+						},
+						error: BaseError.fromError(error)
+					});
+				}
 			}
 		}
 	}

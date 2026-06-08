@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0.
 import os from "node:os";
 import path from "node:path";
-import { ContextIdStore } from "@twin.org/context";
-import { Converter, RandomHelper } from "@twin.org/core";
+import type { IBackgroundTask } from "@twin.org/background-task-models";
+import { TaskStatus } from "@twin.org/background-task-models";
+import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
+import { Converter, Is, RandomHelper } from "@twin.org/core";
 import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
-import { SortDirection } from "@twin.org/entity";
+import {
+	EntitySchemaFactory,
+	EntitySchemaHelper,
+	SortDirection,
+	entity,
+	property
+} from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
 import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
 import { nameof } from "@twin.org/nameof";
@@ -14,6 +22,26 @@ import type { BackgroundTask } from "../src/entities/backgroundTask.js";
 import { initSchema } from "../src/schema.js";
 
 let backgroundTaskEntityStorageConnector: MemoryEntityStorageConnector<BackgroundTask>;
+let partitionedRecordStorage: MemoryEntityStorageConnector<PartitionedRecord>;
+
+@entity()
+class PartitionedRecord {
+	@property({ type: "string", isPrimary: true })
+	public id!: string;
+
+	@property({ type: "string" })
+	public value!: string;
+}
+
+interface ICallbackObservation {
+	contextIds?: IContextIds;
+	recordFound: boolean;
+	taskStatus?: string;
+}
+
+interface ICallbackObservationHolder {
+	current?: ICallbackObservation;
+}
 
 /**
  * Wait for status.
@@ -46,6 +74,46 @@ async function waitForError(itemIndex: number = 0): Promise<void> {
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
 	throw new Error("Timeout waiting for error");
+}
+
+/**
+ * Wait for the state-change callback observation to be recorded.
+ * @param observationHolder The mutable observation holder.
+ */
+async function waitForCallbackObservation(
+	observationHolder: ICallbackObservationHolder
+): Promise<void> {
+	for (let i = 0; i < 50; i++) {
+		if (!Is.empty(observationHolder.current)) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error("Timeout waiting for state-change callback");
+}
+
+interface ISpyCallCounter {
+	mock: { calls: unknown[] };
+}
+
+/**
+ * Wait for a spy to be called the expected number of times.
+ * @param spyCallCounter The spy to wait for.
+ * @param callCount The expected call count.
+ */
+async function waitForSpyCallCount(
+	spyCallCounter: ISpyCallCounter,
+	callCount: number
+): Promise<void> {
+	for (let i = 0; i < 50; i++) {
+		if (spyCallCounter.mock.calls.length >= callCount) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error(
+		`Timeout waiting for spy calls: expected ${callCount}, got ${spyCallCounter.mock.calls.length}`
+	);
 }
 
 describe("BackgroundTaskService", () => {
@@ -862,5 +930,190 @@ describe("BackgroundTaskService", () => {
 
 		expect(Array.from(workerThreadIds).length).toBeGreaterThan(0);
 		expect(Array.from(workerThreadIds).length).toBeLessThanOrEqual(systemWorkerCount);
+	});
+
+	test("releases worker and reschedules once when task finalisation throws", async () => {
+		const backgroundTaskService = new BackgroundTaskService();
+		const serviceInternals = backgroundTaskService as unknown as {
+			_workers: { [workerId: string]: { worker: { task?: unknown } } };
+			scheduleNextTaskProcessing(taskType: string): void;
+		};
+
+		await backgroundTaskService.registerHandler(
+			"finalisation-failure",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod",
+			undefined,
+			{ idleShutdownTimeout: -1 }
+		);
+
+		await backgroundTaskService.start();
+
+		const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+		const originalSet = backgroundTaskEntityStorageConnector.set.bind(
+			backgroundTaskEntityStorageConnector
+		);
+		const setSpy = vi
+			.spyOn(backgroundTaskEntityStorageConnector, "set")
+			.mockImplementation(async (taskEntity: BackgroundTask) => {
+				if (taskEntity.status === TaskStatus.Success) {
+					throw new Error("finalisation storage failed");
+				}
+				return originalSet(taskEntity);
+			});
+
+		await backgroundTaskService.create(
+			"finalisation-failure",
+			{ counter: 0 },
+			{ retainFor: 10_000 }
+		);
+
+		await waitForSpyCallCount(scheduleSpy, 1);
+		expect(scheduleSpy).toHaveBeenCalledWith("finalisation-failure");
+
+		for (const workerEntry of Object.values(serviceInternals._workers)) {
+			expect(workerEntry.worker.task).toBeUndefined();
+		}
+
+		setSpy.mockRestore();
+		scheduleSpy.mockClear();
+
+		await backgroundTaskService.create(
+			"finalisation-failure",
+			{ counter: 1 },
+			{ retainFor: 10_000 }
+		);
+
+		await waitForStatus(TaskStatus.Success, 1);
+		await waitForSpyCallCount(scheduleSpy, 1);
+
+		scheduleSpy.mockRestore();
+	});
+
+	describe("state-change callback context", () => {
+		const TENANT_A = "tenant-org-a";
+		const TENANT_B = "tenant-org-b";
+		const RECORD_ID = "record-under-tenant-a";
+
+		beforeAll(() => {
+			EntitySchemaFactory.register(nameof<PartitionedRecord>(), () =>
+				EntitySchemaHelper.getSchema(PartitionedRecord)
+			);
+		});
+
+		beforeEach(() => {
+			partitionedRecordStorage = new MemoryEntityStorageConnector<PartitionedRecord>({
+				entitySchema: nameof<PartitionedRecord>(),
+				partitionContextIds: [ContextIdKeys.Tenant]
+			});
+		});
+
+		afterEach(async () => {
+			const contextStorage = await ContextIdStore.getStorage();
+			contextStorage.enterWith({});
+		});
+
+		test("task entity stores creation tenant contextIds", async () => {
+			const backgroundTaskService = new BackgroundTaskService();
+
+			await backgroundTaskService.start();
+
+			await ContextIdStore.run({ [ContextIdKeys.Tenant]: TENANT_A }, async () => {
+				await backgroundTaskService.create("context-capture", { recordId: RECORD_ID });
+			});
+
+			const storedTask = backgroundTaskEntityStorageConnector.getStore()[0];
+			expect(storedTask.contextIds).toEqual({ [ContextIdKeys.Tenant]: TENANT_A });
+		});
+
+		test("state-change callback reads context-partitioned storage under task tenant", async () => {
+			const backgroundTaskService = new BackgroundTaskService();
+			const observation: ICallbackObservationHolder = {};
+
+			await backgroundTaskService.registerHandler<{ recordId: string }, { ok: boolean }>(
+				"partitioned-finalise",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				async (task: IBackgroundTask<{ recordId: string }, { ok: boolean }>) => {
+					if (task.status !== TaskStatus.Success) {
+						return;
+					}
+
+					const contextIds = await ContextIdStore.getContextIds();
+					const record = await partitionedRecordStorage.get(task.payload?.recordId ?? "");
+					observation.current = {
+						contextIds,
+						recordFound: Is.object(record),
+						taskStatus: task.status
+					};
+				},
+				{ idleShutdownTimeout: -1 }
+			);
+
+			await backgroundTaskService.start();
+
+			await ContextIdStore.run({ [ContextIdKeys.Tenant]: TENANT_A }, async () => {
+				await partitionedRecordStorage.set({
+					id: RECORD_ID,
+					value: "created-under-tenant-a"
+				});
+				await backgroundTaskService.create(
+					"partitioned-finalise",
+					{ recordId: RECORD_ID },
+					{ retainFor: 10_000 }
+				);
+			});
+
+			// Simulate a concurrent main-thread request for tenant B while the worker completes.
+			const contextStorage = await ContextIdStore.getStorage();
+			contextStorage.enterWith({ [ContextIdKeys.Tenant]: TENANT_B });
+
+			await waitForStatus(TaskStatus.Success);
+			await waitForCallbackObservation(observation);
+
+			const storedTask = backgroundTaskEntityStorageConnector.getStore()[0];
+			expect(storedTask.contextIds).toEqual({ [ContextIdKeys.Tenant]: TENANT_A });
+			expect(observation.current?.taskStatus).toEqual(TaskStatus.Success);
+			expect(observation.current?.contextIds?.[ContextIdKeys.Tenant]).toEqual(TENANT_A);
+			expect(observation.current?.recordFound).toBe(true);
+		});
+
+		test("state-change callback errors are caught and not unhandled rejections", async () => {
+			const backgroundTaskService = new BackgroundTaskService();
+
+			const unhandledRejections: unknown[] = [];
+			const onUnhandledRejection = (reason: unknown): void => {
+				unhandledRejections.push(reason);
+			};
+			process.on("unhandledRejection", onUnhandledRejection);
+
+			try {
+				await backgroundTaskService.registerHandler(
+					"throwing-callback",
+					`file://${path.join(__dirname, "testModule.js")}`,
+					"testMethod",
+					async (task: IBackgroundTask) => {
+						if (task.status === TaskStatus.Success) {
+							throw new Error("state-change callback failed");
+						}
+					},
+					{ idleShutdownTimeout: -1 }
+				);
+
+				await backgroundTaskService.start();
+				await backgroundTaskService.create(
+					"throwing-callback",
+					{ counter: 0 },
+					{ retainFor: 10_000 }
+				);
+
+				await waitForStatus(TaskStatus.Success);
+				await new Promise(resolve => setTimeout(resolve, 300));
+
+				expect(unhandledRejections).toHaveLength(0);
+			} finally {
+				process.off("unhandledRejection", onUnhandledRejection);
+			}
+		});
 	});
 });
