@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.8](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.7...background-task-scheduler-v0.0.3-next.8) (2026-06-08)
+
+
+### Bug Fixes
+
+* restore task context in background task state-change callbacks ([#46](https://github.com/iotaledger/twin-background-task/issues/46)) ([d4f9f3b](https://github.com/iotaledger/twin-background-task/commit/d4f9f3bb57f8fb83c62024f9a385c81e2d511920))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.7 to 0.0.3-next.8
+
 ## [0.0.3-next.7](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.6...background-task-scheduler-v0.0.3-next.7) (2026-05-20)
 
 
