@@ -1,6 +1,6 @@
 {
 	"name": "@twin.org/background-task-scheduler",
-	"version": "0.0.3-next.9",
+	"version": "0.0.3-next.10",
 	"description": "Schedules background tasks for one-off or recurring execution windows",
 	"repository": {
 		"type": "git",
@@ -28,7 +28,7 @@
 		"dist:no-test": "npm run clean && npm run build && npm run test:build"
 	},
 	"dependencies": {
-		"@twin.org/background-task-models": "0.0.3-next.9",
+		"@twin.org/background-task-models": "0.0.3-next.10",
 		"@twin.org/core": "next",
 		"@twin.org/entity-storage-models": "next",
 		"@twin.org/nameof": "next",

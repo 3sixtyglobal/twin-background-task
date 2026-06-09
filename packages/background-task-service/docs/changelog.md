@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.10](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.9...background-task-service-v0.0.3-next.10) (2026-06-09)
+
+
+### Bug Fixes
+
+* prevent duplicate task dispatch on first activity ([#47](https://github.com/iotaledger/twin-background-task/issues/47)) ([a684977](https://github.com/iotaledger/twin-background-task/commit/a6849777adc1493f0ad8cfd11dc5f91bfff8e182))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.9 to 0.0.3-next.10
+
 ## [0.0.3-next.9](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.8...background-task-service-v0.0.3-next.9) (2026-06-08)
 
 
