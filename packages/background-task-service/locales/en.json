@@ -3,6 +3,7 @@
 		"backgroundTaskService": {
 			"namespaceMismatch": "The namespace in the urn \"{id}\" does not match the namespace of the entity storage background task \"{namespace}\"",
 			"completeFailed": "Failed to complete processing task \"{id}\" with type \"{type}\" with status \"{status}\"",
+			"dispatchFailed": "Failed to dispatch task \"{taskId}\" with type \"{taskType}\"",
 			"stateChangeCallbackFailed": "The state change callback failed for task \"{id}\" with type \"{type}\" and status \"{status}\"",
 			"taskFinishedProcessingFailed": "Failed to finalise background task processing for task \"{id}\" with method \"{type}\""
 		}

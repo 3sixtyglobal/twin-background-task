@@ -105,6 +105,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	};
 
 	/**
+	 * The ids of tasks this process is currently claiming or processing.
+	 * @internal
+	 */
+	private readonly _inFlightTaskIds: Map<string, Set<string>>;
+
+	/**
 	 * The maximum number of concurrent tasks allowed.
 	 * @internal
 	 */
@@ -161,6 +167,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._maxSystemWorkerCount = maxSystemWorkerCount;
 		this._taskHandlers = {};
 		this._workers = {};
+		this._inFlightTaskIds = new Map<string, Set<string>>();
 		this._started = false;
 		this._lastCleanup = 0;
 
@@ -627,71 +634,109 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 				} else {
 					// Next process time has been reached so we can prepare to process the task
 
+					// Claim the task for this process before dispatching. The check and add are
+					// kept together and synchronous, so an interleaved processTaskType run for
+					// the same task type cannot dispatch it twice. Released in the finally block
+					// if we end up not dispatching (no worker capacity or dispatch threw),
+					// otherwise in taskFinishedProcessing / cleanupWorker once the task completes.
+					let inFlightForType = this._inFlightTaskIds.get(taskType);
+					if (Is.empty(inFlightForType)) {
+						inFlightForType = new Set<string>();
+						this._inFlightTaskIds.set(taskType, inFlightForType);
+					} else if (inFlightForType.has(nextTask.id)) {
+						return;
+					}
+
+					inFlightForType.add(nextTask.id);
+
 					// First check if any of the current workers are idle
 					let activeWorkerCount = 0;
 					let usedIdle = false;
-					for (const worker of taskHandler.workers) {
-						if (Is.empty(worker.task)) {
-							// Found an idle worker, no need for a new worker
-							// we can just process the task on this one
-							// If there is an idle timer for the worker, clear it now
-							if (Is.object(worker.idleTimerId)) {
-								clearTimeout(worker.idleTimerId);
-								delete worker.idleTimerId;
+					let dispatched = false;
+					try {
+						for (const worker of taskHandler.workers) {
+							if (Is.empty(worker.task)) {
+								// Found an idle worker, no need for a new worker
+								// we can just process the task on this one
+								// If there is an idle timer for the worker, clear it now
+								if (Is.object(worker.idleTimerId)) {
+									clearTimeout(worker.idleTimerId);
+									delete worker.idleTimerId;
+								}
+								await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
+								usedIdle = true;
+								dispatched = true;
+							} else {
+								activeWorkerCount++;
 							}
-							await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
-							usedIdle = true;
-						} else {
-							activeWorkerCount++;
 						}
-					}
 
-					if (!usedIdle) {
-						// If we didn't use an idle worker, and the active worker count
-						// is less than the maximum allowed for the task type, create a new worker
-						if (activeWorkerCount < taskHandler.maxWorkerCount) {
-							if (Object.keys(this._workers).length >= this._maxSystemWorkerCount) {
-								// If there are no available system workers, we cannot create
-								// any more workers right now, we log a warning and schedule
-								// a retry for later
-								if (activeWorkerCount === 0) {
-									// We have reached the system worker limit, so we cannot create
-									// any more workers right now, log a warning
-									await this._logging?.log({
-										level: "warn",
-										source: BackgroundTaskService.CLASS_NAME,
-										ts: Date.now(),
-										message: "maxSystemWorkerCountReached",
-										data: {
-											maxSystemWorkerCount: this._maxSystemWorkerCount,
-											type: taskType
-										}
-									});
+						if (!usedIdle) {
+							// If we didn't use an idle worker, and the active worker count
+							// is less than the maximum allowed for the task type, create a new worker
+							if (activeWorkerCount < taskHandler.maxWorkerCount) {
+								if (Object.keys(this._workers).length >= this._maxSystemWorkerCount) {
+									// If there are no available system workers, we cannot create
+									// any more workers right now, we log a warning and schedule
+									// a retry for later
+									if (activeWorkerCount === 0) {
+										// We have reached the system worker limit, so we cannot create
+										// any more workers right now, log a warning
+										await this._logging?.log({
+											level: "warn",
+											source: BackgroundTaskService.CLASS_NAME,
+											ts: Date.now(),
+											message: "maxSystemWorkerCountReached",
+											data: {
+												maxSystemWorkerCount: this._maxSystemWorkerCount,
+												type: taskType
+											}
+										});
 
-									// Schedule a retry for later
-									this.scheduleNextTaskProcessing(taskType);
+										// Schedule a retry for later
+										this.scheduleNextTaskProcessing(taskType);
+									} else {
+										// There is no capacity to process this task right now, but the
+										// task type has active workers, so we just wait for the next processing
+										// cycle to pick it up, which will be triggered when a current task
+										// finishes processing
+									}
 								} else {
-									// There is no capacity to process this task right now, but the
-									// task type has active workers, so we just wait for the next processing
-									// cycle to pick it up, which will be triggered when a current task
-									// finishes processing
+									const workerId = RandomHelper.generateUuidV7("compact");
+									const newWorker: IBackgroundTaskWorker = {
+										workerId
+									};
+									taskHandler.workers.push(newWorker);
+									this._workers[workerId] = {
+										taskType,
+										worker: newWorker
+									};
+									await this.workerProcessTasks(taskHandler, newWorker, taskType, nextTask);
+									dispatched = true;
 								}
 							} else {
-								const workerId = RandomHelper.generateUuidV7("compact");
-								const newWorker: IBackgroundTaskWorker = {
-									workerId
-								};
-								taskHandler.workers.push(newWorker);
-								this._workers[workerId] = {
-									taskType,
-									worker: newWorker
-								};
-								await this.workerProcessTasks(taskHandler, newWorker, taskType, nextTask);
+								// There is no capacity to process this task right now, so we just wait
+								// for the next processing cycle to pick it up, which will be triggered
+								// when a current task finishes processing
 							}
-						} else {
-							// There is no capacity to process this task right now, so we just wait
-							// for the next processing cycle to pick it up, which will be triggered
-							// when a current task finishes processing
+						}
+					} catch (err) {
+						// workerProcessTasks can throw (e.g. a storage failure); log the error so
+						// it doesn't surface as an unhandled rejection from the fire-and-forget
+						// setTimeout callbacks that drive this method.
+						await this._logging?.log({
+							level: "error",
+							source: BackgroundTaskService.CLASS_NAME,
+							ts: Date.now(),
+							message: "dispatchFailed",
+							data: { taskId: nextTask.id, taskType },
+							error: BaseError.fromError(err)
+						});
+					} finally {
+						if (!dispatched) {
+							// Claimed above but not dispatched (no worker capacity or dispatch threw);
+							// release the claim so the next processing cycle can pick the task up again.
+							this._inFlightTaskIds.get(taskType)?.delete(nextTask.id);
 						}
 					}
 
@@ -715,6 +760,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		// but never started due to the service stopping.
 		// Returning a task in processing state allows us to continue processing tasks that were interrupted, but
 		// any tasks should internally decide if they need to be retried or not based on their own state.
+		// Fetch enough candidates to skip any tasks this process is already handling,
+		// so concurrent processTaskType cycles fan out to different tasks (preserving
+		// multi-worker parallelism) instead of re-selecting an in-flight one.
+		const inFlightForType = this._inFlightTaskIds.get(taskType);
 		const nextTasks = await this.internalQuery(
 			taskType,
 			[TaskStatus.Processing, TaskStatus.Pending],
@@ -722,16 +771,15 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			"dateNextProcess",
 			SortDirection.Ascending,
 			undefined,
-			1
+			(inFlightForType?.size ?? 0) + 1
 		);
 
-		if (nextTasks.entities.length > 0) {
-			const nextTask = nextTasks.entities[0];
+		// Return the earliest task that is not already being processed by this process.
+		const nextTask = nextTasks.entities.find(task => !inFlightForType?.has(task.id));
 
-			// All tasks with processing or pending status should have next process set
-			if (Is.stringValue(nextTask.dateNextProcess)) {
-				return nextTask;
-			}
+		// All tasks with processing or pending status should have next process set
+		if (!Is.empty(nextTask) && Is.stringValue(nextTask.dateNextProcess)) {
+			return nextTask;
 		}
 	}
 
@@ -841,6 +889,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	): Promise<void> {
 		const worker = this._workers[thread.workerId];
 		if (!Is.empty(worker)) {
+			// If the worker is torn down while still holding a task, release its in-flight
+			// claim so the task can be picked up again (its status is left as-is for resume).
+			if (!Is.empty(thread.task)) {
+				this._inFlightTaskIds.get(worker.taskType)?.delete(thread.task.id);
+			}
 			// Remove the thread from the pool
 			if (!Is.empty(taskHandler)) {
 				taskHandler.workers = taskHandler.workers.filter(t => t.workerId !== thread.workerId);
@@ -980,6 +1033,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		} finally {
 			// Clear the task from the worker so that it can be re-used for the next task
 			worker.worker.task = undefined;
+			// Release the in-flight claim so the task can be re-selected by the next
+			// processing cycle (e.g. a scheduled retry when its status is Pending).
+			this._inFlightTaskIds.get(taskType)?.delete(task.id);
 			this.scheduleNextTaskProcessing(taskType);
 		}
 	}

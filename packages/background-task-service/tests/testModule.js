@@ -75,6 +75,15 @@ export async function testMethodNonIdleTerminate() {
 }
 
 /**
+ * Test method that stays in-progress long enough to span a second processing cycle.
+ * @returns The thread id.
+ */
+export async function testMethodSlow() {
+	await new Promise(resolve => setTimeout(resolve, 500));
+	return threadId;
+}
+
+/**
  * Test method for context ids.
  * @returns The context ids.
  */

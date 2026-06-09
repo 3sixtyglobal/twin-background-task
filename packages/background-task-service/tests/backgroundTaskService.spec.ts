@@ -839,6 +839,135 @@ describe("BackgroundTaskService", () => {
 		expect(store[4].result).toEqual(5);
 	});
 
+	test("does not dispatch the same task twice when two processing cycles overlap on the first activity (#177)", async () => {
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		// The state-change callback runs on the main thread, so it observes every
+		// transition. Counting Success transitions detects a duplicate dispatch even when
+		// the duplicate runs on a second worker thread (where a module-level counter would
+		// not be shared).
+		let successCount = 0;
+
+		await backgroundTaskConnector.start();
+
+		// Reproduce the reporter's first-activity ordering: create() schedules a
+		// processTaskType run (via setTimeout), then registerHandler() triggers one
+		// immediately. Both target the same pending task; a slow worker method keeps it
+		// in-progress so the scheduled run overlaps the just-dispatched one, and
+		// maxWorkerCount > 1 lets a second worker be created. Before the fix this
+		// dispatched the task twice.
+		await backgroundTaskConnector.create("race-type", { counter: 0 }, { retainFor: 10000 });
+		await backgroundTaskConnector.registerHandler(
+			"race-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodSlow",
+			async task => {
+				if (task.status === "success") {
+					successCount++;
+				}
+			},
+			{
+				maxWorkerCount: 2,
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await waitForStatus("success", 0);
+		// Settle: allow any erroneous second dispatch (scheduled ~100ms after create) to
+		// run to completion before asserting.
+		await new Promise(resolve => setTimeout(resolve, 500));
+
+		// The task must have completed exactly once, and there must be a single task row.
+		expect(successCount).toEqual(1);
+		expect(backgroundTaskEntityStorageConnector.getStore().length).toEqual(1);
+	});
+
+	test("releases in-flight claim on dispatch error so the task can be retried", async () => {
+		// Regression for Bug 1: workerProcessTasks can throw (e.g. storage failure)
+		// between _inFlightTaskIds.add and the worker actually starting. Without a
+		// try/finally the claim is never released and the task is permanently skipped.
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		await backgroundTaskConnector.registerHandler(
+			"retry-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod",
+			undefined,
+			{ maxWorkerCount: 2, idleShutdownTimeout: -1 }
+		);
+		await backgroundTaskConnector.start();
+
+		// Create the task first so the storage write from create() completes before
+		// the spy is installed — any subsequent set() call comes from workerProcessTasks.
+		await backgroundTaskConnector.create("retry-type", { counter: 0 }, { retainFor: 10000 });
+
+		// Throw exactly once on the next set() call (the "set status to Processing"
+		// write). Without Fix 1 the task ID leaks into _inFlightTaskIds permanently.
+		vi.spyOn(backgroundTaskEntityStorageConnector, "set").mockImplementationOnce(async () => {
+			throw new Error("transient storage error");
+		});
+
+		// Let the 100ms dispatch timer fire and the single-throw spy be consumed.
+		await new Promise(resolve => setTimeout(resolve, 200));
+
+		// Trigger a fresh processTaskType cycle; with Fix 1 the in-flight claim was
+		// released in the finally block so the task is picked up and succeeds.
+		await backgroundTaskConnector.create("retry-type", { counter: 0 }, { retainFor: 10000 });
+
+		await waitForStatus("success", 0);
+		await waitForStatus("success", 1);
+
+		const store = backgroundTaskEntityStorageConnector.getStore();
+		expect(store[0].status).toEqual("success");
+		expect(store[1].status).toEqual("success");
+
+		vi.restoreAllMocks();
+	});
+
+	test("per-type in-flight tracking does not inflate the candidate query for unrelated task types", async () => {
+		// Regression for Bug 3: getNextTask used _inFlightTaskIds.size (global count)
+		// as the query limit, so in-flight tasks of type A inflated the fetch for
+		// type B. With Fix 3 the limit is per-type, so each query fetches exactly
+		// (in-flight-for-type + 1) candidates regardless of other types.
+		const backgroundTaskConnector = new BackgroundTaskService();
+
+		// Slow type — blocks workers so _inFlightTaskIds grows for "slow-type".
+		await backgroundTaskConnector.registerHandler(
+			"slow-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodSlow",
+			undefined,
+			{ maxWorkerCount: 3, idleShutdownTimeout: -1 }
+		);
+		// Fast type — must be dispatched promptly regardless of slow-type in-flight count.
+		await backgroundTaskConnector.registerHandler(
+			"fast-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod",
+			undefined,
+			{ idleShutdownTimeout: -1 }
+		);
+
+		await backgroundTaskConnector.start();
+
+		// Fill the slow-type in-flight set with 3 concurrent entries.
+		await backgroundTaskConnector.create("slow-type", {}, { retainFor: 10000 });
+		await backgroundTaskConnector.create("slow-type", {}, { retainFor: 10000 });
+		await backgroundTaskConnector.create("slow-type", {}, { retainFor: 10000 });
+
+		// Allow time for slow tasks to be dispatched and added to _inFlightTaskIds.
+		await new Promise(resolve => setTimeout(resolve, 200));
+
+		// Create the fast task; the fast-type in-flight set is empty so the query
+		// limit should be 1 (not 4 as the old global-size code would produce).
+		// Either way the task must be dispatched and succeed.
+		await backgroundTaskConnector.create("fast-type", { counter: 0 }, { retainFor: 10000 });
+
+		// Fast task is store index 3 (three slow tasks were created first).
+		await waitForStatus("success", 3);
+		expect(backgroundTaskEntityStorageConnector.getStore()[3].status).toEqual("success");
+	});
+
 	test("can propogate context ids to background task", async () => {
 		const backgroundTaskConnector = new BackgroundTaskService();
 
