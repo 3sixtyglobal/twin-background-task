@@ -1245,4 +1245,42 @@ describe("BackgroundTaskService", () => {
 			}
 		});
 	});
+
+	describe("orphaned task adoption", () => {
+		test("adopts a pending task left by a worker thread from a previous session", async () => {
+			// Simulate a task created by worker thread "2" in a previous session that
+			// never completed before the pod restarted.
+			const orphanedTask: BackgroundTask = {
+				id: "bb000000000000000000000000000000",
+				type: "my-type",
+				threadId: "2",
+				status: TaskStatus.Pending,
+				payload: { counter: 5 },
+				retainFor: 10_000,
+				dateCreated: new Date(Date.now()).toISOString(),
+				dateModified: new Date(Date.now()).toISOString(),
+				dateNextProcess: new Date(Date.now()).toISOString()
+			};
+			await backgroundTaskEntityStorageConnector.set(orphanedTask);
+
+			const backgroundTaskService = new BackgroundTaskService();
+
+			await backgroundTaskService.registerHandler(
+				"my-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod"
+			);
+
+			// start() → adoptOrphanedTasks() resets threadId "2" → "main",
+			// then processTaskType() picks it up and executes it.
+			await backgroundTaskService.start();
+
+			await waitForStatus(TaskStatus.Success);
+
+			const store = backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].threadId).toEqual("main");
+			expect(store[0].status).toEqual(TaskStatus.Success);
+			expect(store[0].result).toMatchObject({ counter: 6 });
+		});
+	});
 });

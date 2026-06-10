@@ -246,6 +246,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			this._started = true;
 
 			await this.cleanupRetained();
+			await this.adoptOrphanedTasks();
 
 			for (const taskType of Object.keys(this._taskHandlers)) {
 				await this.processTaskType(taskType);
@@ -1275,6 +1276,65 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		}
 
 		return retainTimestamp;
+	}
+
+	/**
+	 * Adopt tasks left in pending or processing state by worker threads from a previous session.
+	 * Worker thread IDs are ephemeral integers that recycle on each process restart, so any task
+	 * with a non-"main" threadId that survived a pod restart is definitionally orphaned.
+	 * @internal
+	 */
+	private async adoptOrphanedTasks(): Promise<void> {
+		if (!isMainThread) {
+			return;
+		}
+
+		try {
+			let cursor: string | undefined;
+
+			do {
+				const result = await this._backgroundTaskEntityStorageConnector.query(
+					{
+						conditions: [
+							{
+								property: "threadId",
+								value: "main",
+								comparison: ComparisonOperator.NotEquals
+							},
+							{
+								conditions: [
+									{
+										property: "status",
+										value: TaskStatus.Pending,
+										comparison: ComparisonOperator.Equals
+									},
+									{
+										property: "status",
+										value: TaskStatus.Processing,
+										comparison: ComparisonOperator.Equals
+									}
+								],
+								logicalOperator: LogicalOperator.Or
+							}
+						],
+						logicalOperator: LogicalOperator.And
+					},
+					undefined,
+					undefined,
+					cursor
+				);
+
+				cursor = result.cursor;
+
+				for (const task of result.entities as BackgroundTask[]) {
+					task.threadId = "main";
+					task.dateModified = new Date(Date.now()).toISOString();
+					await this._backgroundTaskEntityStorageConnector.set(task);
+				}
+			} while (Is.stringValue(cursor));
+		} catch {
+			// Best-effort startup recovery; failures here are not fatal.
+		}
 	}
 
 	/**
