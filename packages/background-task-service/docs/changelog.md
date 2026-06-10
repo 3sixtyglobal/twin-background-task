@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.11](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.10...background-task-service-v0.0.3-next.11) (2026-06-10)
+
+
+### Bug Fixes
+
+* prevent BackgroundTaskService from polling tasks when running on a worker thread ([#52](https://github.com/iotaledger/twin-background-task/issues/52)) ([113c475](https://github.com/iotaledger/twin-background-task/commit/113c4754efdd898a68e48831eb8f132893b54aba))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.10 to 0.0.3-next.11
+
 ## [0.0.3-next.10](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.9...background-task-service-v0.0.3-next.10) (2026-06-09)
 
 
