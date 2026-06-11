@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.12](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.11...background-task-scheduler-v0.0.3-next.12) (2026-06-11)
+
+
+### Features
+
+* remove default logging ([ca9599a](https://github.com/iotaledger/twin-background-task/commit/ca9599aca7ef0375a20e19e0881eaa0e7a2cd7ac))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.11 to 0.0.3-next.12
+
 ## [0.0.3-next.11](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.0.3-next.10...background-task-scheduler-v0.0.3-next.11) (2026-06-10)
 
 
