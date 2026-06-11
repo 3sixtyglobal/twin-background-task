@@ -10,12 +10,6 @@ Options for the task scheduler constructor.
 
 The logging component type.
 
-#### Default
-
-```ts
-logging
-```
-
 ***
 
 ### scheduledTaskEntityStorageType? {#scheduledtaskentitystoragetype}

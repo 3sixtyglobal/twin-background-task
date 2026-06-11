@@ -24,12 +24,6 @@ background-task
 
 The logging component type.
 
-#### Default
-
-```ts
-logging
-```
-
 ***
 
 ### config? {#config}
