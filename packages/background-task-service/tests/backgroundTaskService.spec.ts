@@ -16,6 +16,7 @@ import {
 } from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
 import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
+import { ModuleHelper } from "@twin.org/modules";
 import { nameof } from "@twin.org/nameof";
 import { BackgroundTaskService } from "../src/backgroundTaskService.js";
 import type { BackgroundTask } from "../src/entities/backgroundTask.js";
@@ -1243,6 +1244,219 @@ describe("BackgroundTaskService", () => {
 			} finally {
 				process.off("unhandledRejection", onUnhandledRejection);
 			}
+		});
+	});
+
+	describe("worker thread lifecycle", () => {
+		test("terminates worker thread after task completes with idleShutdownTimeout 0", async () => {
+			const terminateSpy = vi.fn().mockResolvedValue(0);
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const worker = originalFn(module, completed, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						terminateSpy();
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = new BackgroundTaskService();
+			await backgroundTaskService.registerHandler(
+				"terminate-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod"
+				// idleShutdownTimeout defaults to 0 — immediate cleanup after each task
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("terminate-type", { counter: 0 }, { retainFor: 10000 });
+
+			await waitForStatus("success");
+
+			// Bug 1: without the fix, cleanupWorker() never calls terminate()
+			expect(terminateSpy).toHaveBeenCalledOnce();
+
+			vi.restoreAllMocks();
+			await backgroundTaskService.stop();
+		});
+
+		test("terminates worker threads when stop() is called", async () => {
+			const terminateSpy = vi.fn().mockResolvedValue(0);
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const worker = originalFn(module, completed, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						terminateSpy();
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = new BackgroundTaskService();
+			await backgroundTaskService.registerHandler(
+				"stop-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				undefined,
+				{ idleShutdownTimeout: -1 } // keep alive — worker survives the task
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("stop-type", { counter: 0 }, { retainFor: 10000 });
+
+			await waitForStatus("success");
+
+			// Worker is still alive (idleShutdownTimeout: -1), terminate not yet called
+			expect(terminateSpy).not.toHaveBeenCalled();
+
+			// Bug 2: without the fix, stop() never calls terminate()
+			await backgroundTaskService.stop();
+			expect(terminateSpy).toHaveBeenCalledOnce();
+
+			vi.restoreAllMocks();
+		});
+
+		test("stop() invokes shutdownMethod before terminating workers", async () => {
+			let shutdownMethodCompleted = false;
+			const terminateSpy = vi.fn().mockResolvedValue(0);
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownMethodCompleted = true;
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						terminateSpy();
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = new BackgroundTaskService();
+			await backgroundTaskService.registerHandler(
+				"graceful-stop-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				undefined,
+				{
+					idleShutdownTimeout: -1,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create(
+				"graceful-stop-type",
+				{ counter: 0 },
+				{ retainFor: 10000 }
+			);
+
+			await waitForStatus("success");
+
+			// Worker is still alive (idleShutdownTimeout: -1); shutdownMethod not yet called
+			expect(shutdownMethodCompleted).toBe(false);
+
+			// stop() should call shutdownMethod before terminating — currently FAILS (red)
+			await backgroundTaskService.stop();
+			expect(shutdownMethodCompleted).toBe(true);
+			expect(terminateSpy).toHaveBeenCalledOnce();
+
+			vi.restoreAllMocks();
+		});
+
+		test("terminates workers and clears pool when handler is unregistered", async () => {
+			const terminateSpy = vi.fn().mockResolvedValue(0);
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const worker = originalFn(module, completed, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						terminateSpy();
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = new BackgroundTaskService();
+			const serviceInternals = backgroundTaskService as unknown as {
+				_workers: { [workerId: string]: unknown };
+			};
+
+			await backgroundTaskService.registerHandler(
+				"unregister-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				undefined,
+				{ idleShutdownTimeout: -1 } // keep alive — worker stays in pool after task
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("unregister-type", { counter: 0 }, { retainFor: 10000 });
+
+			await waitForStatus("success");
+
+			// Worker is alive and tracked in the pool
+			expect(Object.keys(serviceInternals._workers)).toHaveLength(1);
+			expect(terminateSpy).not.toHaveBeenCalled();
+
+			// Bug 3: without the fix, unregisterHandler() never cleans up or terminates workers
+			await backgroundTaskService.unregisterHandler("unregister-type");
+			expect(terminateSpy).toHaveBeenCalledOnce();
+			expect(Object.keys(serviceInternals._workers)).toHaveLength(0);
+
+			vi.restoreAllMocks();
+			await backgroundTaskService.stop();
+		});
+
+		test("removes crashed worker from pool and releases in-flight claim when worker thread crashes during task execution", async () => {
+			const backgroundTaskService = new BackgroundTaskService();
+			const serviceInternals = backgroundTaskService as unknown as {
+				_workers: { [workerId: string]: unknown };
+				_inFlightTaskIds: Map<string, Set<string>>;
+			};
+
+			await backgroundTaskService.registerHandler(
+				"crash-type",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethodCrash",
+				undefined,
+				{ idleShutdownTimeout: -1 }
+			);
+
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("crash-type", {}, { retainFor: 10000 });
+
+			// Wait until the task error is written to storage — that proves
+			// taskFinishedProcessing ran. Then give cleanupWorker a moment to follow.
+			await waitForError();
+			await new Promise(resolve => setTimeout(resolve, 50));
+
+			// Bug 4: without the fix, the dead worker stays in _workers
+			expect(Object.keys(serviceInternals._workers)).toHaveLength(0);
+
+			// Bug 4: without the fix, the task in-flight claim is never released
+			const inFlight = serviceInternals._inFlightTaskIds.get("crash-type");
+			expect(inFlight?.size ?? 0).toEqual(0);
+
+			await backgroundTaskService.stop();
 		});
 	});
 

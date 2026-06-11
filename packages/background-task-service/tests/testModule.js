@@ -49,6 +49,14 @@ export async function testMethodShutdown() {
 }
 
 /**
+ * Test shutdown method that stays suspended long enough to test the timeout fallback.
+ */
+export async function testMethodSlowShutdown() {
+	await new Promise(resolve => setTimeout(resolve, 300));
+	return 0;
+}
+
+/**
  * Test method for threading.
  * @returns The thread id.
  */
@@ -90,4 +98,18 @@ export async function testMethodSlow() {
 export async function testMethodContextIds() {
 	const contextIds = await ContextIdStore.getContextIds();
 	return contextIds;
+}
+
+/**
+ * Test method that crashes the worker thread mid-execution.
+ * Schedules an uncaught exception via setTimeout to escape the worker's
+ * try/catch, triggering worker.on("error") in the parent thread while
+ * this method is still suspended (the task is still in-flight when the crash fires).
+ */
+export async function testMethodCrash(engineCloneData, payload) {
+	setTimeout(() => {
+		throw new Error('simulated worker crash');
+	}, 10);
+	// Stay suspended so the task is still in-flight when the crash fires.
+	await new Promise(resolve => setTimeout(resolve, 200));
 }

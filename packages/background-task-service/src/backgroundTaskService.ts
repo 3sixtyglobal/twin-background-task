@@ -74,6 +74,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	private static readonly _DEFAULT_CLEANUP_INTERVAL: number = 120000;
 
 	/**
+	 * The default worker shutdown timeout in milliseconds.
+	 * @internal
+	 */
+	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
+
+	/**
 	 * The handlers for tasks.
 	 * @internal
 	 */
@@ -145,6 +151,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @internal
 	 */
 	private readonly _cleanupInterval: number;
+
+	/**
+	 * How long in milliseconds stop() waits for workers to finish their shutdownMethod before force-terminating them.
+	 * @internal
+	 */
+	private readonly _workerShutdownTimeout: number;
 
 	/**
 	 * Create a new instance of BackgroundTaskService.
@@ -226,6 +238,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			options?.config?.retryInterval ?? BackgroundTaskService._DEFAULT_RETRY_INTERVAL;
 		this._cleanupInterval =
 			options?.config?.cleanupInterval ?? BackgroundTaskService._DEFAULT_CLEANUP_INTERVAL;
+		this._workerShutdownTimeout =
+			options?.config?.workerShutdownTimeout ??
+			BackgroundTaskService._DEFAULT_WORKER_SHUTDOWN_TIMEOUT;
 	}
 
 	/**
@@ -263,18 +278,34 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		if (this._started) {
 			this._started = false;
 
-			// Clear any wait timers as we are stopping
-			for (const taskHandler of Object.values(this._taskHandlers)) {
+			for (const [taskType, taskHandler] of Object.entries(this._taskHandlers)) {
+				// Clear the wait timer so no new tasks are dispatched.
 				if (!Is.undefined(taskHandler.waitTimerId)) {
 					clearTimeout(taskHandler.waitTimerId);
 					delete taskHandler.waitTimerId;
 				}
 
+				// Cancel idle timers and send a graceful shutdown message to each worker.
+				// shutdownIdleThread falls through to cleanupWorker immediately when no
+				// shutdownMethod is registered.
 				for (const worker of taskHandler.workers) {
 					if (!Is.undefined(worker.idleTimerId)) {
 						clearTimeout(worker.idleTimerId);
 						delete worker.idleTimerId;
 					}
+					await this.shutdownIdleThread(taskHandler, taskType, worker);
+				}
+
+				// Poll until all workers have self-cleaned via their completed callback,
+				// or until the timeout elapses.
+				const deadline = Date.now() + this._workerShutdownTimeout;
+				while (taskHandler.workers.length > 0 && Date.now() < deadline) {
+					await new Promise(resolve => setTimeout(resolve, 50));
+				}
+
+				// Force-terminate any workers that did not finish in time.
+				for (const worker of taskHandler.workers) {
+					await this.cleanupWorker(taskHandler, worker);
 				}
 			}
 		}
@@ -341,6 +372,20 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 */
 	public async unregisterHandler(taskType: string): Promise<void> {
 		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
+		const taskHandler = this._taskHandlers[taskType];
+		if (!Is.empty(taskHandler)) {
+			if (!Is.undefined(taskHandler.waitTimerId)) {
+				clearTimeout(taskHandler.waitTimerId);
+				delete taskHandler.waitTimerId;
+			}
+			for (const worker of taskHandler.workers) {
+				if (!Is.undefined(worker.idleTimerId)) {
+					clearTimeout(worker.idleTimerId);
+					delete worker.idleTimerId;
+				}
+				await this.cleanupWorker(taskHandler, worker);
+			}
+		}
 		delete this._taskHandlers[taskType];
 	}
 
@@ -815,6 +860,13 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					) {
 						// The runner has stopped, so we need to remove the worker from the pool
 						await this.cleanupWorker(taskHandler, worker);
+					} else if (operation === "error") {
+						// The worker thread crashed with an uncaught exception. Record the
+						// task failure so retry logic runs, then force-clean the pool slot.
+						// We bypass shutdownIdleThread() because the thread is already dead —
+						// postMessage would be silently dropped, leaving cleanupWorker unreachable.
+						await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, err);
+						await this.cleanupWorker(taskHandler, worker);
 					}
 				},
 				{
@@ -901,6 +953,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			}
 			// Remove the worker from the worker list
 			delete this._workers[thread.workerId];
+			await thread.module?.terminate();
 		}
 	}
 
@@ -1012,11 +1065,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			if (taskHandler.idleShutdownTimeout >= 0 && task.status !== TaskStatus.Pending) {
 				if (taskHandler.idleShutdownTimeout > 0) {
 					worker.worker.idleTimerId = setTimeout(
-						async () => this.shutdownIdleThread(taskHandler, task, worker.worker),
+						async () => this.shutdownIdleThread(taskHandler, task.type, worker.worker),
 						taskHandler.idleShutdownTimeout
 					);
 				} else {
-					await this.shutdownIdleThread(taskHandler, task, worker.worker);
+					await this.shutdownIdleThread(taskHandler, task.type, worker.worker);
 				}
 			}
 		} catch (error) {
@@ -1053,14 +1106,14 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Shutdown an idle thread.
 	 * @param taskHandler The background task handler.
-	 * @param task The background task.
+	 * @param taskType The task type being shut down.
 	 * @param thread The background task thread.
 	 * @returns Nothing.
 	 * @internal
 	 */
 	private async shutdownIdleThread(
 		taskHandler: IBackgroundTaskHandler,
-		task: IBackgroundTask,
+		taskType: string,
 		thread: IBackgroundTaskWorker
 	): Promise<void> {
 		if (Is.stringValue(taskHandler.shutdownMethod)) {
@@ -1072,7 +1125,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 				ts: Date.now(),
 				message: "shutdownWorker",
 				data: {
-					type: task.type
+					type: taskType
 				}
 			});
 			const boundMethod = thread.module?.executeMethod.bind(this);
