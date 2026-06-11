@@ -154,7 +154,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._backgroundTaskEntityStorageConnector = EntityStorageConnectorFactory.get(
 			options?.backgroundTaskEntityStorageType ?? "background-task"
 		);
-		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
+		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType);
 
 		const cpuCount = os.cpus().length;
 		// Determine the maximum system worker count, either custom or based on CPU cores

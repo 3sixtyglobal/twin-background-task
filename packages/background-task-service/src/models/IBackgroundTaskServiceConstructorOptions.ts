@@ -14,7 +14,6 @@ export interface IBackgroundTaskServiceConstructorOptions {
 
 	/**
 	 * The logging component type.
-	 * @default logging
 	 */
 	loggingComponentType?: string;
 

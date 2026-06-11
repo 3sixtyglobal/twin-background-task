@@ -79,7 +79,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 		this._scheduledTaskEntityStorageConnector = EntityStorageConnectorFactory.get(
 			options?.scheduledTaskEntityStorageType ?? "scheduled-task"
 		);
-		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType ?? "logging");
+		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType);
 		this._tasks = {};
 		this._runningTasks = [];
 		this._tickIntervalMs = options?.config?.intervalMs ?? 60 * 1000; // 1 minute

@@ -8,7 +8,6 @@ import type { ITaskSchedulerConfig } from "./ITaskSchedulerConfig.js";
 export interface ITaskSchedulerConstructorOptions {
 	/**
 	 * The logging component type.
-	 * @default logging
 	 */
 	loggingComponentType?: string;
 
