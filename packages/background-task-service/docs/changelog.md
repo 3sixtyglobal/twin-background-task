@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.0.3-next.13](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.12...background-task-service-v0.0.3-next.13) (2026-06-11)
+
+
+### Bug Fixes
+
+* call terminate() on all worker decommission paths to fix OS thread leak ([#55](https://github.com/iotaledger/twin-background-task/issues/55)) ([3eb1eda](https://github.com/iotaledger/twin-background-task/commit/3eb1eda2f9c7d7343d24c4945c2d595b1959213e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.0.3-next.12 to 0.0.3-next.13
+
 ## [0.0.3-next.12](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.0.3-next.11...background-task-service-v0.0.3-next.12) (2026-06-11)
 
 

@@ -1,5 +1,5 @@
 {
-	"packages/background-task-models": "0.0.3-next.12",
-	"packages/background-task-service": "0.0.3-next.12",
-	"packages/background-task-scheduler": "0.0.3-next.12"
+	"packages/background-task-models": "0.0.3-next.13",
+	"packages/background-task-service": "0.0.3-next.13",
+	"packages/background-task-scheduler": "0.0.3-next.13"
 }
