@@ -13,7 +13,7 @@ export interface ITaskSchedulerComponent extends IComponent {
 	 * @param taskId The id of the task to add.
 	 * @param times The times at which the task should be scheduled.
 	 * @param taskCallback The callback to execute when the task is scheduled.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task is registered with the scheduler
 	 */
 	addTask(
 		taskId: string,
@@ -24,7 +24,7 @@ export interface ITaskSchedulerComponent extends IComponent {
 	/**
 	 * Remove a task from the scheduler.
 	 * @param taskId The id of the task to remove.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been removed from the scheduler
 	 */
 	removeTask(taskId: string): Promise<void>;
 

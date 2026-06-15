@@ -20,7 +20,7 @@ export interface IBackgroundTaskComponent extends IComponent {
 	 * @param options.idleShutdownTimeout Terminate the worker after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the handler is registered
 	 */
 	registerHandler<T, U>(
 		taskType: string,
@@ -38,7 +38,7 @@ export interface IBackgroundTaskComponent extends IComponent {
 	/**
 	 * Unregister a handler for a task.
 	 * @param taskType The type of the task handler to remove.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the handler is removed
 	 */
 	unregisterHandler(taskType: string): Promise<void>;
 
@@ -72,21 +72,21 @@ export interface IBackgroundTaskComponent extends IComponent {
 	/**
 	 * Retry a failed task immediately instead of waiting for it's next scheduled retry time.
 	 * @param taskId The id of the task to retry.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the retry request has been applied
 	 */
 	retry(taskId: string): Promise<void>;
 
 	/**
 	 * Remove a task ignoring any retain until date.
 	 * @param taskId The id of the task to remove.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been removed
 	 */
 	remove(taskId: string): Promise<void>;
 
 	/**
 	 * Cancel a task, will only be actioned if the task is currently pending.
 	 * @param taskId The id of the task to cancel.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the cancellation has been applied
 	 */
 	cancel(taskId: string): Promise<void>;
 

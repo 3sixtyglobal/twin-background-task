@@ -254,7 +254,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * The component needs to be started when the node is initialized.
 	 * @param nodeLoggingComponentType The node logging component type.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the service has started and pending tasks are being processed
 	 */
 	public async start(nodeLoggingComponentType?: string): Promise<void> {
 		if (!this._started) {
@@ -272,7 +272,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeLoggingComponentType The node logging component type.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when all workers have been shut down
 	 */
 	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		if (this._started) {
@@ -322,7 +322,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param options.idleShutdownTimeout Terminate the thread after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the handler is registered and initial task processing begins
 	 */
 	public async registerHandler<T, U>(
 		taskType: string,
@@ -369,6 +369,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Unregister a handler for a task.
 	 * @param taskType The type of the task handler to remove.
+	 * @returns A promise that resolves when the handler and its workers have been removed
 	 */
 	public async unregisterHandler(taskType: string): Promise<void> {
 		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
@@ -518,7 +519,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Retry a failed task immediately instead of waiting for it's next scheduled retry time.
 	 * @param taskId The id of the task to retry.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the retry has been scheduled
 	 */
 	public async retry(taskId: string): Promise<void> {
 		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
@@ -551,7 +552,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Remove a task ignoring any retain until date.
 	 * @param taskId The id of the task to remove.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been removed from storage
 	 */
 	public async remove(taskId: string): Promise<void> {
 		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
@@ -577,7 +578,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Cancel a task, will only be actioned if the task is currently pending.
 	 * @param taskId The id of the task to cancel.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the cancellation has been persisted
 	 */
 	public async cancel(taskId: string): Promise<void> {
 		Urn.guard(BackgroundTaskService.CLASS_NAME, nameof(taskId), taskId);
@@ -646,6 +647,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Process the tasks of the specified type.
 	 * @param taskType The type of the task to process.
+	 * @returns A promise that resolves when the processing cycle for this task type is complete
 	 * @internal
 	 */
 	private async processTaskType(taskType: string): Promise<void> {
@@ -835,7 +837,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param worker The background task worker.
 	 * @param taskType The type of the task to process.
 	 * @param nextTask The next background task to process.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been dispatched to the worker thread
 	 * @internal
 	 */
 	private async workerProcessTasks(
@@ -933,7 +935,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * Cleanup a worker from the pool.
 	 * @param taskHandler The background task handler.
 	 * @param thread The background task thread.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the worker has been terminated and removed from the pool
 	 * @internal
 	 */
 	private async cleanupWorker(
@@ -963,7 +965,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param workerId The id of the worker that processed the task.
 	 * @param result The result of the task processing.
 	 * @param err Any error that occurred during processing.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task state has been persisted and callbacks fired
 	 * @internal
 	 */
 	private async taskFinishedProcessing(
@@ -1108,7 +1110,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param taskHandler The background task handler.
 	 * @param taskType The task type being shut down.
 	 * @param thread The background task thread.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the shutdown method has been invoked or the worker cleaned up immediately
 	 * @internal
 	 */
 	private async shutdownIdleThread(
@@ -1141,7 +1143,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Fire the state changed callback for a task.
 	 * @param task The task that changed state.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the state change callback has completed
 	 * @internal
 	 */
 	private async fireStateChanged(task: BackgroundTask): Promise<void> {
@@ -1175,7 +1177,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	/**
 	 * Process the retention of a task.
 	 * @param task The task to process retention for.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been removed or its retain timestamp updated
 	 * @internal
 	 */
 	private async processRetention(task: BackgroundTask): Promise<void> {
@@ -1335,6 +1337,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * Adopt tasks left in pending or processing state by worker threads from a previous session.
 	 * Worker thread IDs are ephemeral integers that recycle on each process restart, so any task
 	 * with a non-"main" threadId that survived a pod restart is definitionally orphaned.
+	 * @returns A promise that resolves when all orphaned tasks have been re-assigned to the main thread
 	 * @internal
 	 */
 	private async adoptOrphanedTasks(): Promise<void> {
@@ -1392,6 +1395,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 
 	/**
 	 * Cleanup the retained tasks.
+	 * @returns A promise that resolves when expired retained tasks have been removed
 	 * @internal
 	 */
 	private async cleanupRetained(): Promise<void> {

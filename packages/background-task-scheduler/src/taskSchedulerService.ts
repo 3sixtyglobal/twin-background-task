@@ -97,7 +97,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	/**
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeLoggingComponentType The node logging component type.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the scheduler has stopped and in-flight tasks have been reset
 	 */
 	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		this.stopTimer();
@@ -118,7 +118,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * @param taskId The id of the task to add.
 	 * @param times The times at which the task should be scheduled.
 	 * @param taskCallback The callback to execute when the task is scheduled.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been registered and the scheduler timer started
 	 */
 	public async addTask(
 		taskId: string,
@@ -151,7 +151,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	/**
 	 * Remove a task from the scheduler.
 	 * @param taskId The id of the task to remove.
-	 * @returns Nothing.
+	 * @returns A promise that resolves when the task has been removed
 	 */
 	public async removeTask(taskId: string): Promise<void> {
 		if (!Is.empty(this._tasks[taskId])) {
@@ -217,6 +217,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 
 	/**
 	 * Start the timer for running scheduled tasks.
+	 * @returns A promise that resolves when the timer has been started and any immediately due tasks triggered
 	 * @internal
 	 */
 	private async startTimer(): Promise<void> {
@@ -241,6 +242,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 
 	/**
 	 * Trigger scheduled tasks based on their next run times.
+	 * @returns A promise that resolves when all due tasks have been triggered and their next trigger times updated
 	 * @internal
 	 */
 	private async triggerScheduledTasks(): Promise<void> {
