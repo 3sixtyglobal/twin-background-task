@@ -24,6 +24,7 @@ import { initSchema } from "../src/schema.js";
 
 let backgroundTaskEntityStorageConnector: MemoryEntityStorageConnector<BackgroundTask>;
 let partitionedRecordStorage: MemoryEntityStorageConnector<PartitionedRecord>;
+let activeServices: BackgroundTaskService[] = [];
 
 @entity()
 class PartitionedRecord {
@@ -52,13 +53,13 @@ interface ICallbackObservationHolder {
 async function waitForStatus(status: string, itemIndex: number = 0): Promise<void> {
 	const additionalItems = itemIndex * 2;
 	for (let i = 0; i < 50 + additionalItems; i++) {
-		if (backgroundTaskEntityStorageConnector.getStore()[itemIndex]?.status === status) {
+		if ((await backgroundTaskEntityStorageConnector.getStore())[itemIndex]?.status === status) {
 			return;
 		}
 		await new Promise(resolve => setTimeout(resolve, 100));
 	}
 	console.debug(
-		JSON.stringify(backgroundTaskEntityStorageConnector.getStore()[itemIndex], null, 2)
+		JSON.stringify((await backgroundTaskEntityStorageConnector.getStore())[itemIndex], null, 2)
 	);
 	throw new Error("Timeout waiting for status");
 }
@@ -69,7 +70,7 @@ async function waitForStatus(status: string, itemIndex: number = 0): Promise<voi
  */
 async function waitForError(itemIndex: number = 0): Promise<void> {
 	for (let i = 0; i < 500; i++) {
-		if (backgroundTaskEntityStorageConnector.getStore()[itemIndex]?.error) {
+		if ((await backgroundTaskEntityStorageConnector.getStore())[itemIndex]?.error) {
 			return;
 		}
 		await new Promise(resolve => setTimeout(resolve, 100));
@@ -117,6 +118,14 @@ async function waitForSpyCallCount(
 	);
 }
 
+function makeService(
+	options?: ConstructorParameters<typeof BackgroundTaskService>[0]
+): BackgroundTaskService {
+	const service = new BackgroundTaskService(options);
+	activeServices.push(service);
+	return service;
+}
+
 describe("BackgroundTaskService", () => {
 	beforeAll(() => {
 		initSchema();
@@ -131,7 +140,8 @@ describe("BackgroundTaskService", () => {
 
 	beforeEach(() => {
 		backgroundTaskEntityStorageConnector = new MemoryEntityStorageConnector<BackgroundTask>({
-			entitySchema: nameof<BackgroundTask>()
+			entitySchema: nameof<BackgroundTask>(),
+			config: { storageKey: "background-task" }
 		});
 
 		EntityStorageConnectorFactory.register(
@@ -140,21 +150,28 @@ describe("BackgroundTaskService", () => {
 		);
 	});
 
+	afterEach(async () => {
+		await Promise.all(activeServices.map(async s => s.stop().catch(() => {})));
+		activeServices = [];
+		await backgroundTaskEntityStorageConnector.teardown();
+		await partitionedRecordStorage?.teardown();
+	});
+
 	test("can construct with dependencies", async () => {
-		const backgroundTaskService = new BackgroundTaskService();
+		const backgroundTaskService = makeService();
 
 		expect(backgroundTaskService).toBeDefined();
 	});
 
 	test("can create a task with no handler", async () => {
-		const backgroundTaskService = new BackgroundTaskService();
+		const backgroundTaskService = makeService();
 
 		await backgroundTaskService.start();
 		const taskId = await backgroundTaskService.create("my-type");
 		expect(taskId.split(":")[0]).toEqual("background-task");
 		expect(taskId.split(":")[1]).toEqual("entity-storage");
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
 				id: "00000000000000000000000000000000",
@@ -166,7 +183,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can create a task with handler and no retainment", async () => {
-		const backgroundTaskService = new BackgroundTaskService();
+		const backgroundTaskService = makeService();
 
 		await backgroundTaskService.registerHandler(
 			"my-type",
@@ -177,7 +194,7 @@ describe("BackgroundTaskService", () => {
 		await backgroundTaskService.start();
 		await backgroundTaskService.create("my-type", { counter: 0 });
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
 				id: "01010101010101010101010101010101",
@@ -193,7 +210,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can create a task with handler and retainment", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -206,7 +223,7 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success");
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
 				id: "02020202020202020202020202020202",
@@ -223,7 +240,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can create a task with handler and retainment with error and no retries", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -240,10 +257,9 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("failed");
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
-				id: "05050505050505050505050505050505",
 				type: "my-type",
 				status: "failed",
 				payload: {
@@ -259,7 +275,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can create a task with handler and retainment with error and single retry", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		const data = {
 			throw: true,
@@ -280,10 +296,9 @@ describe("BackgroundTaskService", () => {
 
 		await waitForError();
 
-		let store = backgroundTaskEntityStorageConnector.getStore();
+		let store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
-				id: "07070707070707070707070707070707",
 				type: "my-type",
 				retryInterval: 2000,
 				status: "pending",
@@ -304,18 +319,15 @@ describe("BackgroundTaskService", () => {
 			await backgroundTaskEntityStorageConnector.set(store[0]);
 		}
 
-		const task = await backgroundTaskConnector.get(
-			"background-task:entity-storage:07070707070707070707070707070707"
-		);
+		const task = await backgroundTaskConnector.get(`background-task:entity-storage:${store[0].id}`);
 		expect(task).toBeDefined();
 
 		await waitForStatus("success");
 
-		store = backgroundTaskEntityStorageConnector.getStore();
+		store = await backgroundTaskEntityStorageConnector.getStore();
 
 		expect(store).toMatchObject([
 			{
-				id: "07070707070707070707070707070707",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -331,7 +343,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add multiple tasks and process them in order", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -347,11 +359,10 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 4);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 
 		expect(store).toMatchObject([
 			{
-				id: "09090909090909090909090909090909",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -364,7 +375,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -377,7 +387,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -390,7 +399,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -403,7 +411,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -419,7 +426,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add multiple tasks and process them in order, when one item fails and no retry", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -438,11 +445,10 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 4);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 
 		expect(store).toMatchObject([
 			{
-				id: "13131313131313131313131313131313",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -455,7 +461,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "14141414141414141414141414141414",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -468,7 +473,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "15151515151515151515151515151515",
 				type: "my-type",
 				status: "failed",
 				payload: {
@@ -481,7 +485,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "16161616161616161616161616161616",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -494,7 +497,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "17171717171717171717171717171717",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -510,7 +512,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add multiple tasks and process them in order, when one item fails and retry", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 500 }
 		});
 
@@ -530,7 +532,7 @@ describe("BackgroundTaskService", () => {
 		}
 
 		await waitForError(2);
-		const store2 = backgroundTaskEntityStorageConnector.getStore();
+		const store2 = await backgroundTaskEntityStorageConnector.getStore();
 		if (store2[2]?.payload) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			(store2[2].payload as any).throw = false;
@@ -538,10 +540,9 @@ describe("BackgroundTaskService", () => {
 		}
 		await waitForStatus("success", 2);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
-				id: "1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -554,7 +555,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -567,7 +567,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -580,7 +579,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "20202020202020202020202020202020",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -593,7 +591,6 @@ describe("BackgroundTaskService", () => {
 				}
 			},
 			{
-				id: "21212121212121212121212121212121",
 				type: "my-type",
 				status: "success",
 				payload: {
@@ -614,15 +611,15 @@ describe("BackgroundTaskService", () => {
 			SortDirection.Ascending
 		);
 		expect(completedOrder.entities.length).toBe(5);
-		expect(completedOrder.entities[0].id).toBe("1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d");
-		expect(completedOrder.entities[1].id).toBe("1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e");
-		expect(completedOrder.entities[2].id).toBe("20202020202020202020202020202020");
-		expect(completedOrder.entities[3].id).toBe("21212121212121212121212121212121");
-		expect(completedOrder.entities[4].id).toBe("1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f");
+		expect(completedOrder.entities[0].payload?.id).toBe(0);
+		expect(completedOrder.entities[1].payload?.id).toBe(1);
+		expect(completedOrder.entities[2].payload?.id).toBe(3);
+		expect(completedOrder.entities[3].payload?.id).toBe(4);
+		expect(completedOrder.entities[4].payload?.id).toBe(2);
 	});
 
 	test("can create a task and cancel it", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 1000 }
 		});
 
@@ -635,14 +632,14 @@ describe("BackgroundTaskService", () => {
 
 		await backgroundTaskConnector.cancel(id);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 
 		expect(store[0].status).toEqual("cancelled");
 		expect(store[0].dateCancelled).toBeDefined();
 	});
 
 	test("can cleanup retained items when passed their retained date", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 1000 }
 		});
 
@@ -665,12 +662,12 @@ describe("BackgroundTaskService", () => {
 
 		await backgroundTaskConnector.start();
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(0);
 	});
 
 	test("can not cleanup retained items when their retained date has not yet passed", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 1000 }
 		});
 
@@ -695,12 +692,12 @@ describe("BackgroundTaskService", () => {
 
 		await new Promise(resolve => setTimeout(resolve, 1000));
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(1);
 	});
 
 	test("can not cleanup retained items when no retained date set", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 1000 }
 		});
 
@@ -722,12 +719,12 @@ describe("BackgroundTaskService", () => {
 
 		await backgroundTaskConnector.start();
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store.length).toEqual(1);
 	});
 
 	test("can start a clone of the engine in the background task", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService({
+		const backgroundTaskConnector = makeService({
 			config: { taskInterval: 1000 }
 		});
 
@@ -747,10 +744,9 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success");
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store).toMatchObject([
 			{
-				id: "28282828282828282828282828282828",
 				payload: {
 					counter: 1
 				},
@@ -765,7 +761,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add task to a handler with init and shutdown methods", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -786,7 +782,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add task to a handler with multiple threads", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -806,7 +802,7 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 4);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 
 		const workerThreadIds = new Set();
 		for (const item of store) {
@@ -816,7 +812,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can add task to a handler with no termination on idle", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -836,12 +832,12 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 4);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store[4].result).toEqual(5);
 	});
 
 	test("does not dispatch the same task twice when two processing cycles overlap on the first activity (#177)", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		// The state-change callback runs on the main thread, so it observes every
 		// transition. Counting Success transitions detects a duplicate dispatch even when
@@ -880,14 +876,14 @@ describe("BackgroundTaskService", () => {
 
 		// The task must have completed exactly once, and there must be a single task row.
 		expect(successCount).toEqual(1);
-		expect(backgroundTaskEntityStorageConnector.getStore().length).toEqual(1);
+		expect((await backgroundTaskEntityStorageConnector.getStore()).length).toEqual(1);
 	});
 
 	test("releases in-flight claim on dispatch error so the task can be retried", async () => {
 		// Regression for Bug 1: workerProcessTasks can throw (e.g. storage failure)
 		// between _inFlightTaskIds.add and the worker actually starting. Without a
 		// try/finally the claim is never released and the task is permanently skipped.
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"retry-type",
@@ -918,7 +914,7 @@ describe("BackgroundTaskService", () => {
 		await waitForStatus("success", 0);
 		await waitForStatus("success", 1);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store[0].status).toEqual("success");
 		expect(store[1].status).toEqual("success");
 
@@ -930,7 +926,7 @@ describe("BackgroundTaskService", () => {
 		// as the query limit, so in-flight tasks of type A inflated the fetch for
 		// type B. With Fix 3 the limit is per-type, so each query fetches exactly
 		// (in-flight-for-type + 1) candidates regardless of other types.
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		// Slow type — blocks workers so _inFlightTaskIds grows for "slow-type".
 		await backgroundTaskConnector.registerHandler(
@@ -966,11 +962,12 @@ describe("BackgroundTaskService", () => {
 
 		// Fast task is store index 3 (three slow tasks were created first).
 		await waitForStatus("success", 3);
-		expect(backgroundTaskEntityStorageConnector.getStore()[3].status).toEqual("success");
+		const store = await backgroundTaskEntityStorageConnector.getStore();
+		expect(store[3].status).toEqual("success");
 	});
 
 	test("can propogate context ids to background task", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -990,12 +987,12 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 0);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		expect(store[0].result).toEqual({ testContextId: "12345" });
 	});
 
 	test("can handle multiple tasks at the same time", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type-1",
@@ -1015,7 +1012,7 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", 1);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		const workerThreadIds = new Set();
 		for (const item of store) {
 			workerThreadIds.add(item.result);
@@ -1024,7 +1021,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("can use the maximum number of threads", async () => {
-		const backgroundTaskConnector = new BackgroundTaskService();
+		const backgroundTaskConnector = makeService();
 
 		await backgroundTaskConnector.registerHandler(
 			"my-type",
@@ -1052,7 +1049,7 @@ describe("BackgroundTaskService", () => {
 
 		await waitForStatus("success", numberItems - 1);
 
-		const store = backgroundTaskEntityStorageConnector.getStore();
+		const store = await backgroundTaskEntityStorageConnector.getStore();
 		const workerThreadIds = new Set();
 		for (const item of store) {
 			workerThreadIds.add(item.result);
@@ -1063,7 +1060,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	test("releases worker and reschedules once when task finalisation throws", async () => {
-		const backgroundTaskService = new BackgroundTaskService();
+		const backgroundTaskService = makeService();
 		const serviceInternals = backgroundTaskService as unknown as {
 			_workers: { [workerId: string]: { worker: { task?: unknown } } };
 			scheduleNextTaskProcessing(taskType: string): void;
@@ -1134,17 +1131,19 @@ describe("BackgroundTaskService", () => {
 		beforeEach(() => {
 			partitionedRecordStorage = new MemoryEntityStorageConnector<PartitionedRecord>({
 				entitySchema: nameof<PartitionedRecord>(),
-				partitionContextIds: [ContextIdKeys.Tenant]
+				partitionContextIds: [ContextIdKeys.Tenant],
+				config: { storageKey: "partitioned-record" }
 			});
 		});
 
 		afterEach(async () => {
 			const contextStorage = await ContextIdStore.getStorage();
 			contextStorage.enterWith({});
+			await partitionedRecordStorage.teardown();
 		});
 
 		test("task entity stores creation tenant contextIds", async () => {
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 
 			await backgroundTaskService.start();
 
@@ -1152,12 +1151,12 @@ describe("BackgroundTaskService", () => {
 				await backgroundTaskService.create("context-capture", { recordId: RECORD_ID });
 			});
 
-			const storedTask = backgroundTaskEntityStorageConnector.getStore()[0];
+			const storedTask = (await backgroundTaskEntityStorageConnector.getStore())[0];
 			expect(storedTask.contextIds).toEqual({ [ContextIdKeys.Tenant]: TENANT_A });
 		});
 
 		test("state-change callback reads context-partitioned storage under task tenant", async () => {
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			const observation: ICallbackObservationHolder = {};
 
 			await backgroundTaskService.registerHandler<{ recordId: string }, { ok: boolean }>(
@@ -1201,7 +1200,7 @@ describe("BackgroundTaskService", () => {
 			await waitForStatus(TaskStatus.Success);
 			await waitForCallbackObservation(observation);
 
-			const storedTask = backgroundTaskEntityStorageConnector.getStore()[0];
+			const storedTask = (await backgroundTaskEntityStorageConnector.getStore())[0];
 			expect(storedTask.contextIds).toEqual({ [ContextIdKeys.Tenant]: TENANT_A });
 			expect(observation.current?.taskStatus).toEqual(TaskStatus.Success);
 			expect(observation.current?.contextIds?.[ContextIdKeys.Tenant]).toEqual(TENANT_A);
@@ -1209,7 +1208,7 @@ describe("BackgroundTaskService", () => {
 		});
 
 		test("state-change callback errors are caught and not unhandled rejections", async () => {
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 
 			const unhandledRejections: unknown[] = [];
 			const onUnhandledRejection = (reason: unknown): void => {
@@ -1264,7 +1263,7 @@ describe("BackgroundTaskService", () => {
 				}
 			);
 
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			await backgroundTaskService.registerHandler(
 				"terminate-type",
 				`file://${path.join(__dirname, "testModule.js")}`,
@@ -1299,7 +1298,7 @@ describe("BackgroundTaskService", () => {
 				}
 			);
 
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			await backgroundTaskService.registerHandler(
 				"stop-type",
 				`file://${path.join(__dirname, "testModule.js")}`,
@@ -1349,7 +1348,7 @@ describe("BackgroundTaskService", () => {
 				}
 			);
 
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			await backgroundTaskService.registerHandler(
 				"graceful-stop-type",
 				`file://${path.join(__dirname, "testModule.js")}`,
@@ -1396,7 +1395,7 @@ describe("BackgroundTaskService", () => {
 				}
 			);
 
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			const serviceInternals = backgroundTaskService as unknown as {
 				_workers: { [workerId: string]: unknown };
 			};
@@ -1427,7 +1426,7 @@ describe("BackgroundTaskService", () => {
 		});
 
 		test("removes crashed worker from pool and releases in-flight claim when worker thread crashes during task execution", async () => {
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 			const serviceInternals = backgroundTaskService as unknown as {
 				_workers: { [workerId: string]: unknown };
 				_inFlightTaskIds: Map<string, Set<string>>;
@@ -1477,7 +1476,7 @@ describe("BackgroundTaskService", () => {
 			};
 			await backgroundTaskEntityStorageConnector.set(orphanedTask);
 
-			const backgroundTaskService = new BackgroundTaskService();
+			const backgroundTaskService = makeService();
 
 			await backgroundTaskService.registerHandler(
 				"my-type",
@@ -1491,7 +1490,7 @@ describe("BackgroundTaskService", () => {
 
 			await waitForStatus(TaskStatus.Success);
 
-			const store = backgroundTaskEntityStorageConnector.getStore();
+			const store = await backgroundTaskEntityStorageConnector.getStore();
 			expect(store[0].threadId).toEqual("main");
 			expect(store[0].status).toEqual(TaskStatus.Success);
 			expect(store[0].result).toMatchObject({ counter: 6 });

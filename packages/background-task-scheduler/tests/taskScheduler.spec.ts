@@ -24,7 +24,8 @@ describe("TaskSchedulerService", () => {
 		initSchema();
 
 		scheduledTaskEntityStorageConnector = new MemoryEntityStorageConnector<ScheduledTask>({
-			entitySchema: nameof<ScheduledTask>()
+			entitySchema: nameof<ScheduledTask>(),
+			config: { storageKey: "scheduled-task" }
 		});
 
 		EntityStorageConnectorFactory.register(
@@ -33,8 +34,9 @@ describe("TaskSchedulerService", () => {
 		);
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
 		Date.now = realDateNow;
+		await scheduledTaskEntityStorageConnector.teardown();
 	});
 
 	test("can construct with dependencies", async () => {
