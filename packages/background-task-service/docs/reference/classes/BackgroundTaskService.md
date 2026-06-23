@@ -80,7 +80,7 @@ The node logging component type.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the service has started and pending tasks are being processed
 
 #### Implementation of
 
@@ -106,7 +106,7 @@ The node logging component type.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when all workers have been shut down
 
 #### Implementation of
 
@@ -188,7 +188,7 @@ The shutdown method to call on the module when a worker is stopped.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the handler is registered and initial task processing begins
 
 #### Implementation of
 
@@ -213,6 +213,8 @@ The type of the task handler to remove.
 #### Returns
 
 `Promise`\<`void`\>
+
+A promise that resolves when the handler and its workers have been removed
 
 #### Implementation of
 
@@ -334,7 +336,7 @@ The id of the task to retry.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the retry has been scheduled
 
 #### Implementation of
 
@@ -360,7 +362,7 @@ The id of the task to remove.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task has been removed from storage
 
 #### Implementation of
 
@@ -386,7 +388,7 @@ The id of the task to cancel.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the cancellation has been persisted
 
 #### Implementation of
 

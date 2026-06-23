@@ -38,7 +38,7 @@ The callback to execute when the task is scheduled.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task is registered with the scheduler
 
 ***
 
@@ -60,7 +60,7 @@ The id of the task to remove.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task has been removed from the scheduler
 
 ***
 

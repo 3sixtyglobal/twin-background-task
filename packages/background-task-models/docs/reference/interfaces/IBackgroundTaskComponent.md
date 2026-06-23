@@ -82,7 +82,7 @@ The shutdown method to call on the module when a worker is stopped.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the handler is registered
 
 ***
 
@@ -104,7 +104,7 @@ The type of the task handler to remove.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the handler is removed
 
 ***
 
@@ -214,7 +214,7 @@ The id of the task to retry.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the retry request has been applied
 
 ***
 
@@ -236,7 +236,7 @@ The id of the task to remove.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task has been removed
 
 ***
 
@@ -258,7 +258,7 @@ The id of the task to cancel.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the cancellation has been applied
 
 ***
 

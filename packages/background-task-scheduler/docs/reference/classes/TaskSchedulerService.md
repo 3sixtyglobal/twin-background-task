@@ -72,7 +72,7 @@ The node logging component type.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the scheduler has stopped and in-flight tasks have been reset
 
 #### Implementation of
 
@@ -110,7 +110,7 @@ The callback to execute when the task is scheduled.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task has been registered and the scheduler timer started
 
 #### Implementation of
 
@@ -136,7 +136,7 @@ The id of the task to remove.
 
 `Promise`\<`void`\>
 
-Nothing.
+A promise that resolves when the task has been removed
 
 #### Implementation of
 
