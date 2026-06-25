@@ -91,7 +91,7 @@ export interface IBackgroundTaskComponent extends IComponent {
 	cancel(taskId: string): Promise<void>;
 
 	/**
-	 * Query a list of tasks.
+	 * Query the list of tasks.
 	 * @param taskType The type of the task to get.
 	 * @param taskStatus The status of the task to get.
 	 * @param sortProperty The property to sort by, defaults to dateCreated.
