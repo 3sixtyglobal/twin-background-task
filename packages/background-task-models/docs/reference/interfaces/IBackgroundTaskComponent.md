@@ -266,7 +266,7 @@ A promise that resolves when the cancellation has been applied
 
 > **query**(`taskType?`, `taskStatus?`, `sortProperty?`, `sortDirection?`, `cursor?`, `limit?`): `Promise`\<\{ `entities`: [`IBackgroundTask`](IBackgroundTask.md)\<`any`, `any`\>[]; `cursor?`: `string`; \}\>
 
-Get a list of tasks.
+Query a list of tasks.
 
 #### Parameters
 
