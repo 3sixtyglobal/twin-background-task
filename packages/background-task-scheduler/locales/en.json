@@ -1,14 +1,19 @@
 {
 	"error": {
-		"taskScheduler": {
+		"taskSchedulerService": {
 			"taskFailed": "Task with id \"{id}\" failed to run"
 		}
 	},
 	"info": {
-		"taskScheduler": {
+		"taskSchedulerService": {
 			"taskAdded": "Task with id \"{id}\" added",
 			"taskRemoved": "Task with id \"{id}\" removed",
 			"taskTriggered": "Task with id \"{id}\" triggered at time \"{time}\""
+		}
+	},
+	"warn": {
+		"taskSchedulerService": {
+			"taskStalled": "Task with id \"{id}\" is stalled, last run at \"{lastRunTime}\" and exceeded timeout \"{stalledTaskTimeoutMs}\" ms"
 		}
 	}
 }

@@ -4,7 +4,7 @@ Interface describing a scheduled task information.
 
 ## Properties
 
-### tasks
+### tasks {#tasks}
 
 > **tasks**: `object`
 

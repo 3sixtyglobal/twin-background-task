@@ -4,9 +4,9 @@ Interface for the task scheduler configuration.
 
 ## Properties
 
-### overrideInterval?
+### intervalMs? {#intervalms}
 
-> `optional` **overrideInterval**: `number`
+> `optional` **intervalMs?**: `number`
 
 The interval between checks for running tasks, defaults to 1 minute since that is the resolution of the tasks.
 
@@ -14,4 +14,18 @@ The interval between checks for running tasks, defaults to 1 minute since that i
 
 ```ts
 60000
+```
+
+***
+
+### stalledTaskTimeoutMs? {#stalledtasktimeoutms}
+
+> `optional` **stalledTaskTimeoutMs?**: `number`
+
+The time in milliseconds after which a task that is still marked as running is considered stalled and can be run again.
+
+#### Default
+
+```ts
+300000
 ```

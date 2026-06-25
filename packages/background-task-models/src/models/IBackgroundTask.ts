@@ -1,7 +1,7 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
 import type { IError } from "@twin.org/core";
-import type { TaskStatus } from "./taskStatus";
+import type { TaskStatus } from "./taskStatus.js";
 
 /**
  * Interface describing a background task.
@@ -17,6 +17,11 @@ export interface IBackgroundTask<T = any, U = any> {
 	 * The type of the task.
 	 */
 	type: string;
+
+	/**
+	 * The thread id for the task.
+	 */
+	threadId: string;
 
 	/**
 	 * The retry interval in milliseconds, undefined if default scheduling.

@@ -1,6 +1,6 @@
 # TWIN Background Task Scheduler
 
-Schedule background tasks to run at a specific interval or time.
+This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 

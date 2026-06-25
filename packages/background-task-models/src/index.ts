@@ -1,9 +1,8 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-export * from "./factories/backgroundTaskConnectorFactory";
-export * from "./models/IBackgroundTask";
-export * from "./models/IBackgroundTaskConnector";
-export * from "./models/IScheduledTaskInfo";
-export * from "./models/IScheduledTaskTime";
-export * from "./models/ITaskSchedulerComponent";
-export * from "./models/taskStatus";
+export * from "./models/IBackgroundTask.js";
+export * from "./models/IBackgroundTaskComponent.js";
+export * from "./models/IScheduledTaskInfo.js";
+export * from "./models/IScheduledTaskTime.js";
+export * from "./models/ITaskSchedulerComponent.js";
+export * from "./models/taskStatus.js";

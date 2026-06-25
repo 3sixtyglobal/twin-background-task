@@ -9,5 +9,11 @@ export interface ITaskSchedulerConfig {
 	 * The interval between checks for running tasks, defaults to 1 minute since that is the resolution of the tasks.
 	 * @default 60000
 	 */
-	overrideInterval?: number;
+	intervalMs?: number;
+
+	/**
+	 * The time in milliseconds after which a task that is still marked as running is considered stalled and can be run again.
+	 * @default 300000
+	 */
+	stalledTaskTimeoutMs?: number;
 }

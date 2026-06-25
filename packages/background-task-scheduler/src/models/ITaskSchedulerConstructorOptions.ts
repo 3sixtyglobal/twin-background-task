@@ -1,16 +1,21 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-import type { ITaskSchedulerConfig } from "./ITaskSchedulerConfig";
+import type { ITaskSchedulerConfig } from "./ITaskSchedulerConfig.js";
 
 /**
  * Options for the task scheduler constructor.
  */
 export interface ITaskSchedulerConstructorOptions {
 	/**
-	 * The logging connector type.
-	 * @default logging
+	 * The logging component type.
 	 */
-	loggingConnectorType?: string;
+	loggingComponentType?: string;
+
+	/**
+	 * The scheduled task entity storage connector type.
+	 * @default scheduled-task
+	 */
+	scheduledTaskEntityStorageType?: string;
 
 	/**
 	 * The configuration for the task scheduler.
