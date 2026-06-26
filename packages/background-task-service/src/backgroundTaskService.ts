@@ -935,7 +935,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * Cleanup a worker from the pool.
 	 * @param taskHandler The background task handler.
 	 * @param thread The background task thread.
-	 * @returns A promise that resolves when the worker has been terminated and removed from the pool
+	 * @returns A promise that resolves when the worker has been terminated and removed from the pool.
 	 * @internal
 	 */
 	private async cleanupWorker(
