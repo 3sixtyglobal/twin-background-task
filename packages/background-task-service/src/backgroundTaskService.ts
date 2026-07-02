@@ -1102,7 +1102,18 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @internal
 	 */
 	private scheduleNextTaskProcessing(taskType: string): void {
-		setTimeout(async () => this.processTaskType(taskType), this._taskInterval);
+		const taskHandler = this._taskHandlers[taskType];
+		if (Is.empty(taskHandler)) {
+			return;
+		}
+		if (!Is.undefined(taskHandler.waitTimerId)) {
+			clearTimeout(taskHandler.waitTimerId);
+			delete taskHandler.waitTimerId;
+		}
+		taskHandler.waitTimerId = setTimeout(
+			async () => this.processTaskType(taskType),
+			this._taskInterval
+		);
 	}
 
 	/**
@@ -1130,7 +1141,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					type: taskType
 				}
 			});
-			const boundMethod = thread.module?.executeMethod.bind(this);
+			const boundMethod = thread.module?.executeMethod.bind(thread.module);
 			if (Is.function(boundMethod)) {
 				boundMethod(taskHandler.shutdownMethod, []);
 			}
@@ -1444,7 +1455,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 							],
 							logicalOperator: LogicalOperator.Or
 						}
-					]
+					],
+					logicalOperator: LogicalOperator.And
 				});
 				cursor = result.cursor;
 

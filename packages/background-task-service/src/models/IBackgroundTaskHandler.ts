@@ -50,5 +50,5 @@ export interface IBackgroundTaskHandler {
 	/**
 	 * The timer used to wait between task executions.
 	 */
-	waitTimerId?: NodeJS.Timeout;
+	waitTimerId?: ReturnType<typeof setTimeout>;
 }

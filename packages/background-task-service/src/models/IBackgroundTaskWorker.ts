@@ -25,5 +25,5 @@ export interface IBackgroundTaskWorker {
 	/**
 	 * The timer ID for idle shutdown.
 	 */
-	idleTimerId?: NodeJS.Timeout;
+	idleTimerId?: ReturnType<typeof setTimeout>;
 }

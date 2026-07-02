@@ -69,7 +69,13 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * The timer for running scheduled tasks.
 	 * @internal
 	 */
-	private _timer?: NodeJS.Timeout;
+	private _timer?: ReturnType<typeof setInterval>;
+
+	/**
+	 * Whether the scheduler has been started.
+	 * @internal
+	 */
+	private _started: boolean;
 
 	/**
 	 * Create a new instance of TaskSchedulerComponent.
@@ -82,6 +88,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 		this._logging = ComponentFactory.getIfExists(options?.loggingComponentType);
 		this._tasks = {};
 		this._runningTasks = [];
+		this._started = false;
 		this._tickIntervalMs = options?.config?.intervalMs ?? 60 * 1000; // 1 minute
 		this._stalledTaskTimeoutMs = options?.config?.stalledTaskTimeoutMs ?? 5 * 60 * 1000; // 5 minutes
 	}
@@ -95,22 +102,39 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	}
 
 	/**
+	 * The component needs to be started when the node is initialized.
+	 * @param nodeLoggingComponentType The node logging component type.
+	 * @returns A promise that resolves when the service has started and pending tasks are being processed
+	 */
+	public async start(nodeLoggingComponentType?: string): Promise<void> {
+		if (!this._started) {
+			this._started = true;
+			if (Object.keys(this._tasks).length > 0) {
+				await this.startTimer();
+			}
+		}
+	}
+
+	/**
 	 * The component needs to be stopped when the node is closed.
 	 * @param nodeLoggingComponentType The node logging component type.
 	 * @returns A promise that resolves when the scheduler has stopped and in-flight tasks have been reset
 	 */
 	public async stop(nodeLoggingComponentType?: string): Promise<void> {
-		this.stopTimer();
+		if (this._started) {
+			this._started = false;
+			this.stopTimer();
 
-		// If we had any running tasks, we reset their last run time to allow them to be
-		// triggered by other components
-		for (const taskId of this._runningTasks) {
-			await this._scheduledTaskEntityStorageConnector.set({
-				id: taskId,
-				lastRunTime: undefined
-			});
+			// If we had any running tasks, we reset their last run time to allow them to be
+			// triggered by other components
+			for (const taskId of this._runningTasks) {
+				await this._scheduledTaskEntityStorageConnector.set({
+					id: taskId,
+					lastRunTime: undefined
+				});
+			}
+			this._runningTasks = [];
 		}
-		this._runningTasks = [];
 	}
 
 	/**
@@ -221,11 +245,19 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 * @internal
 	 */
 	private async startTimer(): Promise<void> {
-		if (Is.empty(this._timer)) {
+		if (Is.empty(this._timer) && this._started) {
 			// Trigger immediately to catch up on any missed tasks
 			await this.triggerScheduledTasks();
-			// Set the timer to run at the specified interval
-			this._timer = setInterval(async () => this.triggerScheduledTasks(), this._tickIntervalMs);
+			// Re-check after the await: stop() may have been called while triggerScheduledTasks() was running.
+			// At that point _timer was still undefined so stopTimer() was a no-op — without this guard,
+			// setInterval would create a timer that is never cleaned up.
+			if (this._started) {
+				this._timer = globalThis.setInterval(async () => {
+					if (this._started) {
+						await this.triggerScheduledTasks();
+					}
+				}, this._tickIntervalMs);
+			}
 		}
 	}
 
@@ -235,7 +267,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 */
 	private stopTimer(): void {
 		if (!Is.empty(this._timer)) {
-			clearInterval(this._timer);
+			globalThis.clearInterval(this._timer);
 			this._timer = undefined;
 		}
 	}
