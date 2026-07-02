@@ -54,6 +54,32 @@ The class name of the component.
 
 ***
 
+### start() {#start}
+
+> **start**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
+
+The component needs to be started when the node is initialized.
+
+#### Parameters
+
+##### nodeLoggingComponentType?
+
+`string`
+
+The node logging component type.
+
+#### Returns
+
+`Promise`\<`void`\>
+
+A promise that resolves when the service has started and pending tasks are being processed
+
+#### Implementation of
+
+`ITaskSchedulerComponent.start`
+
+***
+
 ### stop() {#stop}
 
 > **stop**(`nodeLoggingComponentType?`): `Promise`\<`void`\>
