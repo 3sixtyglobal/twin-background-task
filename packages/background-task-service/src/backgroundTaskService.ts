@@ -1161,7 +1161,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		const taskHandler = this._taskHandlers[task.type];
 		if (!Is.empty(taskHandler)) {
 			const stateChangeCallback = taskHandler.stateChangeCallback;
-			if (!Is.empty(stateChangeCallback)) {
+			if (Is.function(stateChangeCallback)) {
 				const contextIds = task.contextIds ?? {};
 				try {
 					await ContextIdStore.run(contextIds, async () => {
@@ -1296,7 +1296,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 */
 	private mapEntityToModel<T, U>(task: BackgroundTask): IBackgroundTask<T, U> {
 		return {
-			id: task.id,
+			id: `background-task:${BackgroundTaskService.NAMESPACE}:${task.id}`,
 			type: task.type,
 			threadId: task.threadId,
 			dateCreated: task.dateCreated,
