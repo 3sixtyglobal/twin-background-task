@@ -92,7 +92,7 @@ describe("TaskSchedulerService", () => {
 		let triggered = false;
 		await taskScheduler.addTask(
 			"testTask",
-			[{ nextTriggerTime: Date.now() + 1000, intervalMinutes: 1 }],
+			[{ nextTriggerTime: Date.now() + 500, intervalMinutes: 1 }],
 			async () => {
 				triggered = true;
 			}
@@ -103,20 +103,20 @@ describe("TaskSchedulerService", () => {
 			testTask: [
 				{
 					intervalMinutes: 1,
-					nextTriggerTime: 1000
+					nextTriggerTime: 500
 				}
 			]
 		});
 		expect(triggered).toEqual(false);
 
-		await new Promise(resolve => setTimeout(resolve, 1000));
+		await new Promise(resolve => setTimeout(resolve, 1500));
 
 		const taskInfo2 = await taskScheduler.tasksInfo();
 		expect(taskInfo2.tasks).toEqual({
 			testTask: [
 				{
 					intervalMinutes: 1,
-					nextTriggerTime: 61000
+					nextTriggerTime: 60500
 				}
 			]
 		});
@@ -134,7 +134,7 @@ describe("TaskSchedulerService", () => {
 		let triggered = false;
 		await taskScheduler.addTask(
 			"testTask",
-			[{ nextTriggerTime: Date.now() + 1000, intervalHours: 1 }],
+			[{ nextTriggerTime: Date.now() + 500, intervalHours: 1 }],
 			async () => {
 				triggered = true;
 			}
@@ -145,20 +145,20 @@ describe("TaskSchedulerService", () => {
 			testTask: [
 				{
 					intervalHours: 1,
-					nextTriggerTime: 1000
+					nextTriggerTime: 500
 				}
 			]
 		});
 		expect(triggered).toEqual(false);
 
-		await new Promise(resolve => setTimeout(resolve, 1000));
+		await new Promise(resolve => setTimeout(resolve, 1500));
 
 		const taskInfo2 = await taskScheduler.tasksInfo();
 		expect(taskInfo2.tasks).toEqual({
 			testTask: [
 				{
 					intervalHours: 1,
-					nextTriggerTime: 3601000
+					nextTriggerTime: 3600500
 				}
 			]
 		});
@@ -176,7 +176,7 @@ describe("TaskSchedulerService", () => {
 		let triggered = false;
 		await taskScheduler.addTask(
 			"testTask",
-			[{ nextTriggerTime: Date.now() + 1000, intervalDays: 1 }],
+			[{ nextTriggerTime: Date.now() + 500, intervalDays: 1 }],
 			async () => {
 				triggered = true;
 			}
@@ -187,20 +187,20 @@ describe("TaskSchedulerService", () => {
 			testTask: [
 				{
 					intervalDays: 1,
-					nextTriggerTime: 1000
+					nextTriggerTime: 500
 				}
 			]
 		});
 		expect(triggered).toEqual(false);
 
-		await new Promise(resolve => setTimeout(resolve, 1000));
+		await new Promise(resolve => setTimeout(resolve, 1500));
 
 		const taskInfo2 = await taskScheduler.tasksInfo();
 		expect(taskInfo2.tasks).toEqual({
 			testTask: [
 				{
 					intervalDays: 1,
-					nextTriggerTime: 86401000
+					nextTriggerTime: 86400500
 				}
 			]
 		});
