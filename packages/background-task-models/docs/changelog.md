@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-models-v0.9.1-next.3...background-task-models-v0.9.1-next.4) (2026-07-23)
+
+
+### Bug Fixes
+
+* id full urn ([#83](https://github.com/iotaledger/twin-background-task/issues/83)) ([eba9b6b](https://github.com/iotaledger/twin-background-task/commit/eba9b6bd84b229106c282c43cca9a7555456b074))
+
 ## [0.9.1-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-models-v0.9.1-next.2...background-task-models-v0.9.1-next.3) (2026-07-02)
 
 
