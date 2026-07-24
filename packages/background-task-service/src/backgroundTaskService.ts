@@ -398,7 +398,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param taskType The type of the task.
 	 * @param payload The payload for the task.
 	 * @param options Additional options for the task.
-	 * @param options.retryCount The number of times to retry the task if it fails, leave undefined to retry forever.
+	 * @param options.retryCount The number of times to retry the task if it fails, leave undefined for no retries.
 	 * @param options.retryInterval The interval in milliseconds to wait between retries, defaults to 5000, leave undefined for default scheduling.
 	 * @param options.retainFor The amount of time in milliseconds to retain the result until removal, defaults to 0 for immediate removal, set to -1 to keep forever.
 	 * @returns The id of the created task.
