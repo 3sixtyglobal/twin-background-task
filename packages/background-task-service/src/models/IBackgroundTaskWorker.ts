@@ -26,4 +26,9 @@ export interface IBackgroundTaskWorker {
 	 * The timer ID for idle shutdown.
 	 */
 	idleTimerId?: ReturnType<typeof setTimeout>;
+
+	/**
+	 * The timer ID for execution timeout.
+	 */
+	executionTimerId?: ReturnType<typeof setTimeout>;
 }

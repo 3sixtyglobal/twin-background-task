@@ -1495,6 +1495,39 @@ describe("BackgroundTaskService", () => {
 		});
 	});
 
+	test("marks task as failed and removes worker when executionTimeout expires on a hung handler", async () => {
+		const backgroundTaskService = makeService();
+		const serviceInternals = backgroundTaskService as unknown as {
+			_workers: { [workerId: string]: unknown };
+			_inFlightTaskIds: Map<string, Set<string>>;
+		};
+
+		await backgroundTaskService.registerHandler(
+			"hung-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodHang",
+			undefined,
+			{ executionTimeout: 300, idleShutdownTimeout: -1 }
+		);
+
+		await backgroundTaskService.start();
+		await backgroundTaskService.create("hung-type", {}, { retainFor: 10_000 });
+
+		await waitForStatus(TaskStatus.Failed);
+		await new Promise(resolve => setTimeout(resolve, 50));
+
+		const store = await backgroundTaskEntityStorageConnector.getStore();
+		expect(store[0]?.status).toBe(TaskStatus.Failed);
+		expect(store[0]?.error).toBeDefined();
+
+		expect(Object.keys(serviceInternals._workers)).toHaveLength(0);
+
+		const inFlight = serviceInternals._inFlightTaskIds.get("hung-type");
+		expect(inFlight?.size ?? 0).toBe(0);
+
+		await backgroundTaskService.stop();
+	});
+
 	describe("orphaned task adoption", () => {
 		test("adopts a pending task left by a worker thread from a previous session", async () => {
 			// Simulate a task created by worker thread "2" in a previous session that

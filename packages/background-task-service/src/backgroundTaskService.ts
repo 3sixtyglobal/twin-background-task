@@ -322,6 +322,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param options.idleShutdownTimeout Terminate the thread after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
+	 * @param options.executionTimeout Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
 	 * @returns A promise that resolves when the handler is registered and initial task processing begins
 	 */
 	public async registerHandler<T, U>(
@@ -334,6 +335,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			idleShutdownTimeout?: number;
 			initialiseMethod?: string;
 			shutdownMethod?: string;
+			executionTimeout?: number;
 		}
 	): Promise<void> {
 		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
@@ -360,6 +362,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			shutdownMethod: options?.shutdownMethod,
 			maxWorkerCount,
 			idleShutdownTimeout,
+			executionTimeout: Coerce.integer(options?.executionTimeout) ?? undefined,
 			workers: []
 		};
 
@@ -929,6 +932,36 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			[engineCloneData, nextTask.payload],
 			nextTask.contextIds
 		);
+
+		if (Is.integer(taskHandler.executionTimeout) && taskHandler.executionTimeout > 0) {
+			worker.executionTimerId = setTimeout(async () => {
+				delete worker.executionTimerId;
+				// Guard: task may have already completed normally before the timeout fired.
+				if (!Is.object(worker.task)) {
+					return;
+				}
+				await this._logging?.log({
+					level: "error",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "executionTimeout",
+					data: {
+						id: worker.task.id,
+						type: taskType,
+						timeout: taskHandler.executionTimeout
+					}
+				});
+				const timeoutError = new GeneralError(
+					BackgroundTaskService.CLASS_NAME,
+					"executionTimeout",
+					{ id: worker.task.id, type: taskType, timeout: taskHandler.executionTimeout }
+				);
+				await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, timeoutError);
+				// Force-terminate the hung worker; the thread cannot respond to a graceful
+				// shutdown message, so cleanupWorker is called unconditionally here.
+				await this.cleanupWorker(taskHandler, worker);
+			}, taskHandler.executionTimeout);
+		}
 	}
 
 	/**
@@ -1087,6 +1120,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 				error: BaseError.fromError(error)
 			});
 		} finally {
+			// Cancel any pending execution timeout so it does not fire after the task is done.
+			if (!Is.undefined(worker.worker.executionTimerId)) {
+				clearTimeout(worker.worker.executionTimerId);
+				delete worker.worker.executionTimerId;
+			}
 			// Clear the task from the worker so that it can be re-used for the next task
 			worker.worker.task = undefined;
 			// Release the in-flight claim so the task can be re-selected by the next

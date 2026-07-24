@@ -5,7 +5,8 @@
 			"completeFailed": "Failed to complete processing task \"{id}\" with type \"{type}\" with status \"{status}\"",
 			"dispatchFailed": "Failed to dispatch task \"{taskId}\" with type \"{taskType}\"",
 			"stateChangeCallbackFailed": "The state change callback failed for task \"{id}\" with type \"{type}\" and status \"{status}\"",
-			"taskFinishedProcessingFailed": "Failed to finalise background task processing for task \"{id}\" with method \"{type}\""
+			"taskFinishedProcessingFailed": "Failed to finalise background task processing for task \"{id}\" with method \"{type}\"",
+			"executionTimeout": "Task \"{id}\" with type \"{type}\" exceeded its execution timeout of {timeout} ms and has been marked as failed"
 		}
 	},
 	"info": {
