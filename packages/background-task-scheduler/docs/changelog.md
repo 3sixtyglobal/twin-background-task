@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.1-next.5](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.1-next.4...background-task-scheduler-v0.9.1-next.5) (2026-07-24)
+
+
+### Bug Fixes
+
+* resolve timing race in scheduler interval tests ([261b1aa](https://github.com/iotaledger/twin-background-task/commit/261b1aaeef8bd100668be49df689a2abb36f36a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.1-next.4 to 0.9.1-next.5
+
 ## [0.9.1-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.1-next.3...background-task-scheduler-v0.9.1-next.4) (2026-07-23)
 
 
