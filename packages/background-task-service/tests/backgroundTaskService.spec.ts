@@ -319,8 +319,10 @@ describe("BackgroundTaskService", () => {
 			await backgroundTaskEntityStorageConnector.set(store[0]);
 		}
 
-		const task = await backgroundTaskConnector.get(`background-task:entity-storage:${store[0].id}`);
+		const taskUrn = `background-task:entity-storage:${store[0].id}`;
+		const task = await backgroundTaskConnector.get(taskUrn);
 		expect(task).toBeDefined();
+		expect(task?.id).toEqual(taskUrn);
 
 		await waitForStatus("success");
 
@@ -616,6 +618,9 @@ describe("BackgroundTaskService", () => {
 		expect(completedOrder.entities[2].payload?.id).toBe(3);
 		expect(completedOrder.entities[3].payload?.id).toBe(4);
 		expect(completedOrder.entities[4].payload?.id).toBe(2);
+		for (const ent of completedOrder.entities) {
+			expect(ent.id).toMatch(/^background-task:entity-storage:/);
+		}
 	});
 
 	test("can create a task and cancel it", async () => {
@@ -636,6 +641,37 @@ describe("BackgroundTaskService", () => {
 
 		expect(store[0].status).toEqual("cancelled");
 		expect(store[0].dateCancelled).toBeDefined();
+	});
+
+	test("get() and state-change callback both return task id in URN form", async () => {
+		const backgroundTaskService = makeService();
+		let callbackTaskId: string | undefined;
+
+		await backgroundTaskService.registerHandler(
+			"my-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethod",
+			async (task: IBackgroundTask) => {
+				if (task.status === TaskStatus.Success) {
+					callbackTaskId = task.id;
+				}
+			},
+			{ idleShutdownTimeout: -1 }
+		);
+
+		await backgroundTaskService.start();
+		const taskId = await backgroundTaskService.create(
+			"my-type",
+			{ counter: 0 },
+			{ retainFor: 10000 }
+		);
+
+		await waitForStatus("success");
+		await new Promise(resolve => setTimeout(resolve, 100));
+
+		const task = await backgroundTaskService.get(taskId);
+		expect(task?.id).toEqual(taskId);
+		expect(callbackTaskId).toEqual(taskId);
 	});
 
 	test("can cleanup retained items when passed their retained date", async () => {
@@ -1457,6 +1493,39 @@ describe("BackgroundTaskService", () => {
 
 			await backgroundTaskService.stop();
 		});
+	});
+
+	test("marks task as failed and removes worker when executionTimeout expires on a hung handler", async () => {
+		const backgroundTaskService = makeService();
+		const serviceInternals = backgroundTaskService as unknown as {
+			_workers: { [workerId: string]: unknown };
+			_inFlightTaskIds: Map<string, Set<string>>;
+		};
+
+		await backgroundTaskService.registerHandler(
+			"hung-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodHang",
+			undefined,
+			{ executionTimeout: 300, idleShutdownTimeout: -1 }
+		);
+
+		await backgroundTaskService.start();
+		await backgroundTaskService.create("hung-type", {}, { retainFor: 10_000 });
+
+		await waitForStatus(TaskStatus.Failed);
+		await new Promise(resolve => setTimeout(resolve, 50));
+
+		const store = await backgroundTaskEntityStorageConnector.getStore();
+		expect(store[0]?.status).toBe(TaskStatus.Failed);
+		expect(store[0]?.error).toBeDefined();
+
+		expect(Object.keys(serviceInternals._workers)).toHaveLength(0);
+
+		const inFlight = serviceInternals._inFlightTaskIds.get("hung-type");
+		expect(inFlight?.size ?? 0).toBe(0);
+
+		await backgroundTaskService.stop();
 	});
 
 	describe("orphaned task adoption", () => {

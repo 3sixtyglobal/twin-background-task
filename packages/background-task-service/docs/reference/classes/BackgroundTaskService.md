@@ -184,6 +184,12 @@ The initialisation method to call on the module when a worker is started.
 
 The shutdown method to call on the module when a worker is stopped.
 
+###### executionTimeout?
+
+`number`
+
+Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
+
 #### Returns
 
 `Promise`\<`void`\>
@@ -256,7 +262,7 @@ Additional options for the task.
 
 `number`
 
-The number of times to retry the task if it fails, leave undefined to retry forever.
+The number of times to retry the task if it fails, leave undefined for no retries.
 
 ###### retryInterval?
 

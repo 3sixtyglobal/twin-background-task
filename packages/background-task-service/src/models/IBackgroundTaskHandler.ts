@@ -43,6 +43,11 @@ export interface IBackgroundTaskHandler {
 	idleShutdownTimeout: number;
 
 	/**
+	 * Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Undefined means no limit.
+	 */
+	executionTimeout?: number;
+
+	/**
 	 * The workers associated with this task handler.
 	 */
 	workers: IBackgroundTaskWorker[];
@@ -50,5 +55,5 @@ export interface IBackgroundTaskHandler {
 	/**
 	 * The timer used to wait between task executions.
 	 */
-	waitTimerId?: NodeJS.Timeout;
+	waitTimerId?: ReturnType<typeof setTimeout>;
 }

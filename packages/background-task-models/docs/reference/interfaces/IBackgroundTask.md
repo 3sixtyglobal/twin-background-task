@@ -18,7 +18,7 @@ Interface describing a background task.
 
 > **id**: `string`
 
-The id.
+The id in URN form e.g. `background-task:<namespace>:<entity-id>`.
 
 ***
 

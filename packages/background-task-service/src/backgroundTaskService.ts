@@ -322,6 +322,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param options.idleShutdownTimeout Terminate the thread after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
+	 * @param options.executionTimeout Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
 	 * @returns A promise that resolves when the handler is registered and initial task processing begins
 	 */
 	public async registerHandler<T, U>(
@@ -334,6 +335,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			idleShutdownTimeout?: number;
 			initialiseMethod?: string;
 			shutdownMethod?: string;
+			executionTimeout?: number;
 		}
 	): Promise<void> {
 		Guards.stringValue(BackgroundTaskService.CLASS_NAME, nameof(taskType), taskType);
@@ -360,6 +362,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			shutdownMethod: options?.shutdownMethod,
 			maxWorkerCount,
 			idleShutdownTimeout,
+			executionTimeout: Coerce.integer(options?.executionTimeout) ?? undefined,
 			workers: []
 		};
 
@@ -395,7 +398,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @param taskType The type of the task.
 	 * @param payload The payload for the task.
 	 * @param options Additional options for the task.
-	 * @param options.retryCount The number of times to retry the task if it fails, leave undefined to retry forever.
+	 * @param options.retryCount The number of times to retry the task if it fails, leave undefined for no retries.
 	 * @param options.retryInterval The interval in milliseconds to wait between retries, defaults to 5000, leave undefined for default scheduling.
 	 * @param options.retainFor The amount of time in milliseconds to retain the result until removal, defaults to 0 for immediate removal, set to -1 to keep forever.
 	 * @returns The id of the created task.
@@ -929,13 +932,43 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			[engineCloneData, nextTask.payload],
 			nextTask.contextIds
 		);
+
+		if (Is.integer(taskHandler.executionTimeout) && taskHandler.executionTimeout > 0) {
+			worker.executionTimerId = setTimeout(async () => {
+				delete worker.executionTimerId;
+				// Guard: task may have already completed normally before the timeout fired.
+				if (!Is.object(worker.task)) {
+					return;
+				}
+				await this._logging?.log({
+					level: "error",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "executionTimeout",
+					data: {
+						id: worker.task.id,
+						type: taskType,
+						timeout: taskHandler.executionTimeout
+					}
+				});
+				const timeoutError = new GeneralError(
+					BackgroundTaskService.CLASS_NAME,
+					"executionTimeout",
+					{ id: worker.task.id, type: taskType, timeout: taskHandler.executionTimeout }
+				);
+				await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, timeoutError);
+				// Force-terminate the hung worker; the thread cannot respond to a graceful
+				// shutdown message, so cleanupWorker is called unconditionally here.
+				await this.cleanupWorker(taskHandler, worker);
+			}, taskHandler.executionTimeout);
+		}
 	}
 
 	/**
 	 * Cleanup a worker from the pool.
 	 * @param taskHandler The background task handler.
 	 * @param thread The background task thread.
-	 * @returns A promise that resolves when the worker has been terminated and removed from the pool
+	 * @returns A promise that resolves when the worker has been terminated and removed from the pool.
 	 * @internal
 	 */
 	private async cleanupWorker(
@@ -1087,6 +1120,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 				error: BaseError.fromError(error)
 			});
 		} finally {
+			// Cancel any pending execution timeout so it does not fire after the task is done.
+			if (!Is.undefined(worker.worker.executionTimerId)) {
+				clearTimeout(worker.worker.executionTimerId);
+				delete worker.worker.executionTimerId;
+			}
 			// Clear the task from the worker so that it can be re-used for the next task
 			worker.worker.task = undefined;
 			// Release the in-flight claim so the task can be re-selected by the next
@@ -1102,7 +1140,18 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @internal
 	 */
 	private scheduleNextTaskProcessing(taskType: string): void {
-		setTimeout(async () => this.processTaskType(taskType), this._taskInterval);
+		const taskHandler = this._taskHandlers[taskType];
+		if (Is.empty(taskHandler)) {
+			return;
+		}
+		if (!Is.undefined(taskHandler.waitTimerId)) {
+			clearTimeout(taskHandler.waitTimerId);
+			delete taskHandler.waitTimerId;
+		}
+		taskHandler.waitTimerId = setTimeout(
+			async () => this.processTaskType(taskType),
+			this._taskInterval
+		);
 	}
 
 	/**
@@ -1130,7 +1179,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					type: taskType
 				}
 			});
-			const boundMethod = thread.module?.executeMethod.bind(this);
+			const boundMethod = thread.module?.executeMethod.bind(thread.module);
 			if (Is.function(boundMethod)) {
 				boundMethod(taskHandler.shutdownMethod, []);
 			}
@@ -1150,7 +1199,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		const taskHandler = this._taskHandlers[task.type];
 		if (!Is.empty(taskHandler)) {
 			const stateChangeCallback = taskHandler.stateChangeCallback;
-			if (!Is.empty(stateChangeCallback)) {
+			if (Is.function(stateChangeCallback)) {
 				const contextIds = task.contextIds ?? {};
 				try {
 					await ContextIdStore.run(contextIds, async () => {
@@ -1285,7 +1334,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 */
 	private mapEntityToModel<T, U>(task: BackgroundTask): IBackgroundTask<T, U> {
 		return {
-			id: task.id,
+			id: `background-task:${BackgroundTaskService.NAMESPACE}:${task.id}`,
 			type: task.type,
 			threadId: task.threadId,
 			dateCreated: task.dateCreated,
@@ -1444,7 +1493,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 							],
 							logicalOperator: LogicalOperator.Or
 						}
-					]
+					],
+					logicalOperator: LogicalOperator.And
 				});
 				cursor = result.cursor;
 

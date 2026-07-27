@@ -101,6 +101,13 @@ export async function testMethodContextIds() {
 }
 
 /**
+ * Test method that never resolves (simulates a hung handler).
+ */
+export async function testMethodHang() {
+	await new Promise(() => {});
+}
+
+/**
  * Test method that crashes the worker thread mid-execution.
  * Schedules an uncaught exception via setTimeout to escape the worker's
  * try/catch, triggering worker.on("error") in the parent thread while
