@@ -35,7 +35,6 @@
 		"@twin.org/entity": "next",
 		"@twin.org/modules": "next",
 		"@twin.org/nameof": "next",
-		"@twin.org/engine-models": "next",
 		"@twin.org/entity-storage-models": "next",
 		"@twin.org/logging-models": "next"
 	},

@@ -12,6 +12,7 @@ import {
 	BaseError,
 	Coerce,
 	ComponentFactory,
+	Factory,
 	GeneralError,
 	Guards,
 	Is,
@@ -22,7 +23,6 @@ import {
 	Urn,
 	Validation
 } from "@twin.org/core";
-import { EngineCoreFactory } from "@twin.org/engine-models";
 import {
 	ComparisonOperator,
 	type EntityCondition,
@@ -890,9 +890,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					}
 				});
 
-				// Clone the current engine and set it to the worker initialise method
-				const engine = EngineCoreFactory.getIfExists("engine");
-				const engineCloneData = engine?.getCloneData();
+				// Use a replica of the IEngineCore interface to avoid a circular dependency on the engine-core package.
+				const engineCloneData = Factory.getFactory("engine-core")
+					?.getIfExists<{ getCloneData: () => unknown }>("engine")
+					?.getCloneData();
 
 				const currentContextIds = await ContextIdStore.getContextIds();
 				worker.module.executeMethod(
@@ -924,9 +925,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			}
 		});
 
-		// Send the task to the worker worker for processing
-		const engine = EngineCoreFactory.getIfExists("engine");
-		const engineCloneData = engine?.getCloneData();
+		// Use a replica of the IEngineCore interface to avoid a circular dependency on the engine-core package.
+		const engineCloneData = Factory.getFactory("engine-core")
+			?.getIfExists<{ getCloneData: () => unknown }>("engine")
+			?.getCloneData();
 		worker.module.executeMethod(
 			taskHandler.processingMethod,
 			[engineCloneData, nextTask.payload],

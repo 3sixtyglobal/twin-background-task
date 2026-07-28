@@ -5,8 +5,7 @@ import path from "node:path";
 import type { IBackgroundTask } from "@twin.org/background-task-models";
 import { TaskStatus } from "@twin.org/background-task-models";
 import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
-import { Converter, Is, RandomHelper } from "@twin.org/core";
-import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
+import { Converter, Factory, Is, RandomHelper } from "@twin.org/core";
 import {
 	EntitySchemaFactory,
 	EntitySchemaHelper,
@@ -764,9 +763,9 @@ describe("BackgroundTaskService", () => {
 			config: { taskInterval: 1000 }
 		});
 
-		EngineCoreFactory.register(
+		Factory.createFactory<{ getCloneData: () => unknown }>("engine-core").register(
 			"engine",
-			() => ({ getCloneData: () => ({ foo: "bar" }) }) as unknown as IEngineCore
+			() => ({ getCloneData: () => ({ foo: "bar" }) })
 		);
 
 		await backgroundTaskConnector.registerHandler(
