@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.9.2-next.1](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.2-next.0...background-task-scheduler-v0.9.2-next.1) (2026-07-28)
+
+
+### Features
+
+* add context id features ([#29](https://github.com/iotaledger/twin-background-task/issues/29)) ([46ede49](https://github.com/iotaledger/twin-background-task/commit/46ede49a51a4955fe1530e645a66f0073db9a1fd))
+* add task scheduler ([754d973](https://github.com/iotaledger/twin-background-task/commit/754d973e7c8483e5e54e887c157661867d5a0375))
+* add validate-locales ([968cbf9](https://github.com/iotaledger/twin-background-task/commit/968cbf966fffb5060305e8b221fecc0b6c8105b9))
+* background tasks immediately trigger ([a0a847b](https://github.com/iotaledger/twin-background-task/commit/a0a847ba9686adcd0460e810540959f87dcaeab1))
+* eslint migration to flat config ([6c9136c](https://github.com/iotaledger/twin-background-task/commit/6c9136c37bccdbbd109892d1503660aab7080d49))
+* multi-instance lock ([#39](https://github.com/iotaledger/twin-background-task/issues/39)) ([7dcd434](https://github.com/iotaledger/twin-background-task/commit/7dcd434da5e3d1645b6fcd19ed34be4e628e50de))
+* remove default logging ([ca9599a](https://github.com/iotaledger/twin-background-task/commit/ca9599aca7ef0375a20e19e0881eaa0e7a2cd7ac))
+* remove unused parameters ([1028b3c](https://github.com/iotaledger/twin-background-task/commit/1028b3cc147c25da22a8ba8d7207acfb34f89cdb))
+* rename task scheduler component ([2f8aa59](https://github.com/iotaledger/twin-background-task/commit/2f8aa59c069055ff020a3c0c149601f20c656022))
+* rename task scheduler component to service ([f097a98](https://github.com/iotaledger/twin-background-task/commit/f097a988c9ee0795aa55d74deda616365ec4ffb1))
+* typescript 6 update ([e3f2727](https://github.com/iotaledger/twin-background-task/commit/e3f272783e0de7cf4d31f3e84a8e6f5ff633961b))
+* update dependencies ([0867e02](https://github.com/iotaledger/twin-background-task/commit/0867e02fc3c034f8e8cf5918ac6cc4e6b5ca0c93))
+* update framework core ([a068098](https://github.com/iotaledger/twin-background-task/commit/a0680983d7923a1bfb980a67879019bb870ccc5d))
+* update IComponent signatures ([e1a79bc](https://github.com/iotaledger/twin-background-task/commit/e1a79bc4dd813435c56e376f231a4b4ecd2276bf))
+
+
+### Bug Fixes
+
+* cleanup timers ([a0d30b4](https://github.com/iotaledger/twin-background-task/commit/a0d30b4afc485651ed9f1a3e60ad2f307fa3954a))
+* models import ([c830b0d](https://github.com/iotaledger/twin-background-task/commit/c830b0da4deb06f8aeca6fec8988be4da877e73b))
+* resolve timing race in scheduler interval tests ([261b1aa](https://github.com/iotaledger/twin-background-task/commit/261b1aaeef8bd100668be49df689a2abb36f36a6))
+* restore task context in background task state-change callbacks ([#46](https://github.com/iotaledger/twin-background-task/issues/46)) ([d4f9f3b](https://github.com/iotaledger/twin-background-task/commit/d4f9f3bb57f8fb83c62024f9a385c81e2d511920))
+* use async getStore in tests ([97931cd](https://github.com/iotaledger/twin-background-task/commit/97931cdc856e5748b621148737c2eaa14da217fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.2-next.0 to 0.9.2-next.1
+
 ## [0.9.1](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.1...background-task-scheduler-v0.9.1) (2026-07-27)
 
 
