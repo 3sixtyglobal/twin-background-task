@@ -871,6 +871,51 @@ describe("BackgroundTaskService", () => {
 		expect(store[4].result).toEqual(5);
 	});
 
+	test("dispatches a single task once when multiple workers are idle", async () => {
+		const backgroundTaskConnector = makeService();
+		const observedTransitions: string[] = [];
+
+		await backgroundTaskConnector.registerHandler(
+			"idle-fanout-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodSlow",
+			async task => {
+				if (task.id === targetTaskId) {
+					observedTransitions.push(task.status);
+				}
+			},
+			{
+				maxWorkerCount: 2,
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		// Warm up both workers so they exist and are simultaneously idle.
+		await backgroundTaskConnector.create("idle-fanout-type", { counter: 0 }, { retainFor: 10000 });
+		await backgroundTaskConnector.create("idle-fanout-type", { counter: 0 }, { retainFor: 10000 });
+		await waitForStatus("success", 1);
+
+		const serviceInternals = backgroundTaskConnector as unknown as {
+			_workers: { [workerId: string]: unknown };
+		};
+		expect(Object.keys(serviceInternals._workers)).toHaveLength(2);
+
+		const targetTaskId = await backgroundTaskConnector.create(
+			"idle-fanout-type",
+			{ counter: 0 },
+			{ retainFor: 10000 }
+		);
+		await waitForStatus("success", 2);
+
+		// Allow any erroneous duplicate dispatch to complete before assertions.
+		await new Promise(resolve => setTimeout(resolve, 700));
+
+		expect(observedTransitions.filter(status => status === TaskStatus.Processing)).toHaveLength(1);
+		expect(observedTransitions.filter(status => status === TaskStatus.Success)).toHaveLength(1);
+	});
+
 	test("does not dispatch the same task twice when two processing cycles overlap on the first activity (#177)", async () => {
 		const backgroundTaskConnector = makeService();
 

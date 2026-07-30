@@ -717,6 +717,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 								await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
 								usedIdle = true;
 								dispatched = true;
+								break;
 							} else {
 								activeWorkerCount++;
 							}

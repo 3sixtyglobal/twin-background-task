@@ -219,21 +219,28 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 */
 	private calculateNextTriggerTime(time: IScheduledTaskTime): number {
 		let nextTriggerTime = time.nextTriggerTime;
+		const dayMs = 24 * 60 * 60 * 1000;
+		const hourMs = 60 * 60 * 1000;
+		const minuteMs = 60 * 1000;
 
 		if (Is.empty(nextTriggerTime)) {
 			nextTriggerTime = Date.now();
 		}
 
-		if (!Is.empty(time.intervalDays)) {
-			nextTriggerTime += time.intervalDays * 24 * 60 * 60 * 1000;
-		}
+		let intervalMs = 0;
+		intervalMs += (time.intervalDays ?? 0) * dayMs;
+		intervalMs += (time.intervalHours ?? 0) * hourMs;
+		intervalMs += (time.intervalMinutes ?? 0) * minuteMs;
 
-		if (!Is.empty(time.intervalHours)) {
-			nextTriggerTime += time.intervalHours * 60 * 60 * 1000;
-		}
-
-		if (!Is.empty(time.intervalMinutes)) {
-			nextTriggerTime += time.intervalMinutes * 60 * 1000;
+		if (intervalMs > 0) {
+			// Move to the next regular slot and, if that slot is already in the past,
+			// skip missed slots so the next trigger is strictly in the future.
+			nextTriggerTime += intervalMs;
+			const now = Date.now();
+			if (nextTriggerTime <= now) {
+				const intervalsToAdvance = Math.floor((now - nextTriggerTime) / intervalMs) + 1;
+				nextTriggerTime += intervalsToAdvance * intervalMs;
+			}
 		}
 
 		return nextTriggerTime;
