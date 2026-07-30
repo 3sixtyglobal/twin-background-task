@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2-next.2](https://github.com/iotaledger/twin-background-task/compare/background-task-models-v0.9.2-next.1...background-task-models-v0.9.2-next.2) (2026-07-30)
+
+
+### Miscellaneous Chores
+
+* **background-task-models:** Synchronize repo versions
+
 ## [0.9.2-next.1](https://github.com/iotaledger/twin-background-task/compare/background-task-models-v0.9.2-next.0...background-task-models-v0.9.2-next.1) (2026-07-28)
 
 
