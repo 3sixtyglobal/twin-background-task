@@ -3,6 +3,12 @@
 import os from "node:os";
 import { isMainThread, threadId as workerThreadId } from "node:worker_threads";
 import {
+	HealthCategory,
+	HealthStatus,
+	type IHealth,
+	type IHealthProviderComponent
+} from "@twin.org/api-models";
+import {
 	type IBackgroundTask,
 	type IBackgroundTaskComponent,
 	TaskStatus
@@ -44,7 +50,7 @@ import type { IBackgroundTaskWorker } from "./models/IBackgroundTaskWorker.js";
 /**
  * Class for performing background task operations.
  */
-export class BackgroundTaskService implements IBackgroundTaskComponent {
+export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthProviderComponent {
 	/**
 	 * Runtime name for the class.
 	 */
@@ -80,12 +86,48 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
 
 	/**
+	 * The default health check interval in milliseconds (5 minutes).
+	 * @internal
+	 */
+	private static readonly _DEFAULT_HEALTH_INTERVAL: number = 300_000;
+
+	/**
+	 * The timeout in milliseconds for a health-check task to complete.
+	 * @internal
+	 */
+	private static readonly _HEALTH_CHECK_TASK_TIMEOUT: number = 30_000;
+
+	/**
+	 * Reserved task type key used by the built-in health-check handler.
+	 * @internal
+	 */
+	private static readonly _HEALTH_CHECK_TASK_TYPE: string = "health-check";
+
+	/**
 	 * The handlers for tasks.
 	 * @internal
 	 */
 	private readonly _taskHandlers: {
 		[taskType: string]: IBackgroundTaskHandler;
 	};
+
+	/**
+	 * How often the full health lifecycle runs in milliseconds.
+	 * @internal
+	 */
+	private readonly _healthInterval: number;
+
+	/**
+	 * Cached result from the most recent health check lifecycle.
+	 * @internal
+	 */
+	private _lastHealthResult: IHealth[];
+
+	/**
+	 * Unix timestamp (ms) at which the last full health check ran.
+	 * @internal
+	 */
+	private _lastHealthTime: number;
 
 	/**
 	 * The entity storage for the background tasks keys.
@@ -159,6 +201,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	private readonly _workerShutdownTimeout: number;
 
 	/**
+	 * The url of the handler to use for health checks. If not provided, the default health check handler will be used.
+	 * @internal
+	 */
+	private readonly _overrideHealthCheckHandler: string;
+
+	/**
 	 * Create a new instance of BackgroundTaskService.
 	 * @param options The options for the service.
 	 */
@@ -182,6 +230,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._inFlightTaskIds = new Map<string, Set<string>>();
 		this._started = false;
 		this._lastCleanup = 0;
+		this._healthInterval =
+			options?.config?.healthIntervalMs ?? BackgroundTaskService._DEFAULT_HEALTH_INTERVAL;
+		this._lastHealthResult = [];
+		this._lastHealthTime = 0;
 
 		const validationErrors: IValidationFailure[] = [];
 		if (!Is.undefined(options?.config?.taskInterval)) {
@@ -241,6 +293,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._workerShutdownTimeout =
 			options?.config?.workerShutdownTimeout ??
 			BackgroundTaskService._DEFAULT_WORKER_SHUTDOWN_TIMEOUT;
+		this._overrideHealthCheckHandler =
+			options?.config?.overrideHealthCheckHandler ??
+			new URL("./healthCheckHandler.js", import.meta.url).href;
 	}
 
 	/**
@@ -648,6 +703,78 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	}
 
 	/**
+	 * Returns the health status by running a full task register/create/verify/unregister lifecycle.
+	 * @param lastTimestamp The Unix timestamp (ms) recorded at the start of the previous cycle.
+	 * @returns The health status of the component.
+	 */
+	public async health(lastTimestamp: number): Promise<IHealth[]> {
+		if (this._lastHealthTime > 0 && lastTimestamp - this._lastHealthTime < this._healthInterval) {
+			return this._lastHealthResult;
+		}
+
+		const nonce = RandomHelper.generateUuidV7("compact");
+		let taskId: string | undefined;
+
+		const finalize = async (healthStatus: HealthStatus, error?: unknown): Promise<void> => {
+			this._lastHealthResult = [
+				{
+					source: BackgroundTaskService.CLASS_NAME,
+					category: HealthCategory.Application,
+					status: healthStatus,
+					error: !Is.undefined(error) ? BaseError.fromError(error) : undefined
+				}
+			];
+			clearTimeout(timeoutId);
+			if (Is.stringValue(taskId)) {
+				try {
+					await this.remove(taskId);
+				} catch {
+					// Best-effort cleanup; the task will be removed on the next retained cleanup sweep.
+				}
+			}
+			await this.unregisterHandler(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE);
+		};
+
+		const timeoutId = setTimeout(async () => {
+			await finalize(
+				HealthStatus.Error,
+				new GeneralError(BackgroundTaskService.CLASS_NAME, "healthCheckTimeout", {
+					timeout: BackgroundTaskService._HEALTH_CHECK_TASK_TIMEOUT
+				})
+			);
+		}, BackgroundTaskService._HEALTH_CHECK_TASK_TIMEOUT);
+
+		try {
+			await this.registerHandler(
+				BackgroundTaskService._HEALTH_CHECK_TASK_TYPE,
+				this._overrideHealthCheckHandler,
+				"execute",
+				async (task: IBackgroundTask) => {
+					if (
+						task.status === TaskStatus.Success ||
+						task.status === TaskStatus.Failed ||
+						task.status === TaskStatus.Cancelled
+					) {
+						await finalize(
+							task.result === nonce ? HealthStatus.Ok : HealthStatus.Error,
+							task.error
+						);
+					}
+				}
+			);
+
+			taskId = await this.create(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE, nonce, {
+				retainFor: -1
+			});
+		} catch (err) {
+			await finalize(HealthStatus.Error, err);
+		}
+
+		this._lastHealthTime = lastTimestamp > 0 ? lastTimestamp : Date.now();
+		return this._lastHealthResult;
+	}
+
+	/**
 	 * Process the tasks of the specified type.
 	 * @param taskType The type of the task to process.
 	 * @returns A promise that resolves when the processing cycle for this task type is complete
@@ -869,7 +996,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					} else if (operation === "error") {
 						// The worker thread crashed with an uncaught exception. Record the
 						// task failure so retry logic runs, then force-clean the pool slot.
-						// We bypass shutdownIdleThread() because the thread is already dead —
+						// We bypass shutdownIdleThread() because the thread is already dead;
 						// postMessage would be silently dropped, leaving cleanupWorker unreachable.
 						await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, err);
 						await this.cleanupWorker(taskHandler, worker);

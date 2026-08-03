@@ -1609,4 +1609,88 @@ describe("BackgroundTaskService", () => {
 			expect(store[0].result).toMatchObject({ counter: 6 });
 		});
 	});
+
+	describe("health check lifecycle", () => {
+		async function waitForHealthResult(
+			service: BackgroundTaskService,
+			timeoutMs: number = 5000
+		): Promise<void> {
+			const deadline = Date.now() + timeoutMs;
+			while (Date.now() < deadline) {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				if ((service as any)._lastHealthResult.length > 0) {
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 50));
+			}
+			throw new Error("Timeout waiting for health result");
+		}
+
+		test("health returns ok and application category on a successful round-trip", async () => {
+			const backgroundTaskService = makeService({
+				config: {
+					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
+				}
+			});
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.health(Date.now());
+			await waitForHealthResult(backgroundTaskService);
+
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const result = (backgroundTaskService as any)._lastHealthResult;
+			expect(result).toHaveLength(1);
+			expect(result[0].source).toEqual(BackgroundTaskService.CLASS_NAME);
+			expect(result[0].category).toEqual("application");
+			expect(result[0].status).toEqual("ok");
+			expect(result[0].error).toBeUndefined();
+
+			// Handler unregistered and task removed after settle()
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			expect((backgroundTaskService as any)._taskHandlers["health-check"]).toBeUndefined();
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store.length).toEqual(0);
+		});
+
+		test("health returns the cached result when called within the healthIntervalMs", async () => {
+			const backgroundTaskService = makeService({
+				config: {
+					healthIntervalMs: 300_000,
+					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
+				}
+			});
+			await backgroundTaskService.start();
+
+			const ts = Date.now();
+			await backgroundTaskService.health(ts);
+			await waitForHealthResult(backgroundTaskService);
+
+			// Second call within interval — returns the same cached array reference
+			const first = await backgroundTaskService.health(ts + 1000);
+			expect(first[0].status).toEqual("ok");
+			const second = await backgroundTaskService.health(ts + 2000);
+			expect(second).toBe(first);
+		});
+
+		test("health records error when task creation fails", async () => {
+			const backgroundTaskService = makeService({
+				config: {
+					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
+				}
+			});
+			await backgroundTaskService.start();
+
+			vi.spyOn(backgroundTaskService, "create").mockRejectedValueOnce(
+				new Error("storage unavailable")
+			);
+
+			await backgroundTaskService.health(Date.now());
+			await waitForHealthResult(backgroundTaskService);
+
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const result = (backgroundTaskService as any)._lastHealthResult;
+			expect(result[0].status).toEqual("error");
+			expect(result[0].error).toBeDefined();
+		});
+	});
 });
