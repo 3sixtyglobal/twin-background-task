@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.2-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.2...background-task-service-v0.9.2-next.3) (2026-08-03)
+
+
+### Features
+
+* health methods ([#100](https://github.com/iotaledger/twin-background-task/issues/100)) ([75009e6](https://github.com/iotaledger/twin-background-task/commit/75009e68a06246acc6faaf41ff0e086dae1b189e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.2-next.2 to 0.9.2-next.3
+
 ## [0.9.2-next.2](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.1...background-task-service-v0.9.2-next.2) (2026-07-30)
 
 
