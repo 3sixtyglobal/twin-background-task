@@ -5,6 +5,7 @@ Class for performing background task operations.
 ## Implements
 
 - `IBackgroundTaskComponent`
+- `IHealthProviderComponent`
 
 ## Constructors
 
@@ -455,3 +456,29 @@ The list of tasks.
 #### Implementation of
 
 `IBackgroundTaskComponent.query`
+
+***
+
+### health() {#health}
+
+> **health**(`lastTimestamp`): `Promise`\<`IHealth`[]\>
+
+Returns the health status by running a full task register/create/verify/unregister lifecycle.
+
+#### Parameters
+
+##### lastTimestamp
+
+`number`
+
+The Unix timestamp (ms) recorded at the start of the previous cycle.
+
+#### Returns
+
+`Promise`\<`IHealth`[]\>
+
+The health status of the component.
+
+#### Implementation of
+
+`IHealthProviderComponent.health`

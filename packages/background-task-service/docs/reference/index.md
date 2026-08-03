@@ -12,4 +12,5 @@
 
 ## Functions
 
+- [execute](functions/execute.md)
 - [initSchema](functions/initSchema.md)
