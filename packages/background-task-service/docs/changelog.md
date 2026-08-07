@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.2-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.3...background-task-service-v0.9.2-next.4) (2026-08-07)
+
+
+### Features
+
+* linting and dependency update ([6610f40](https://github.com/iotaledger/twin-background-task/commit/6610f4028724bc687558c95831dd379116a39054))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.2-next.3 to 0.9.2-next.4
+
 ## [0.9.2-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.2...background-task-service-v0.9.2-next.3) (2026-08-03)
 
 
