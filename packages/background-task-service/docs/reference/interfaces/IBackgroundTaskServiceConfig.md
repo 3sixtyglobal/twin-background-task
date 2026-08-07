@@ -45,14 +45,6 @@ before force-terminating them. Defaults to 5000.
 
 ***
 
-### healthIntervalMs? {#healthintervalms}
-
-> `optional` **healthIntervalMs?**: `number`
-
-How often the full health lifecycle (create/verify/delete) runs, in milliseconds. Defaults to 300000ms (5 minutes).
-
-***
-
 ### overrideHealthCheckHandler? {#overridehealthcheckhandler}
 
 > `optional` **overrideHealthCheckHandler?**: `string`

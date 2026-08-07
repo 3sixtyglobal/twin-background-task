@@ -459,26 +459,27 @@ The list of tasks.
 
 ***
 
-### health() {#health}
+### healthApplication() {#healthapplication}
 
-> **health**(`lastTimestamp`): `Promise`\<`IHealth`[]\>
+> **healthApplication**(`callback`): `Promise`\<`IHealth`[] \| `undefined`\>
 
-Returns the health status by running a full task register/create/verify/unregister lifecycle.
+Returns the application health status by running a full task register/create/verify/unregister lifecycle.
+Returns undefined as the result will be provided asynchronously via the callback.
 
 #### Parameters
 
-##### lastTimestamp
+##### callback
 
-`number`
+`HealthApplicationCallback`
 
-The Unix timestamp (ms) recorded at the start of the previous cycle.
+The callback to invoke when the deferred health result is ready.
 
 #### Returns
 
-`Promise`\<`IHealth`[]\>
+`Promise`\<`IHealth`[] \| `undefined`\>
 
-The health status of the component.
+undefined as the result is provided via the callback.
 
 #### Implementation of
 
-`IHealthProviderComponent.health`
+`IHealthProviderComponent.healthApplication`
