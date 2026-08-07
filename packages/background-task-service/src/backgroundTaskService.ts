@@ -5,6 +5,7 @@ import { isMainThread, threadId as workerThreadId } from "node:worker_threads";
 import {
 	HealthCategory,
 	HealthStatus,
+	type HealthApplicationCallback,
 	type IHealth,
 	type IHealthProviderComponent
 } from "@twin.org/api-models";
@@ -86,12 +87,6 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
 
 	/**
-	 * The default health check interval in milliseconds (5 minutes).
-	 * @internal
-	 */
-	private static readonly _DEFAULT_HEALTH_INTERVAL: number = 300_000;
-
-	/**
 	 * The timeout in milliseconds for a health-check task to complete.
 	 * @internal
 	 */
@@ -110,24 +105,6 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private readonly _taskHandlers: {
 		[taskType: string]: IBackgroundTaskHandler;
 	};
-
-	/**
-	 * How often the full health lifecycle runs in milliseconds.
-	 * @internal
-	 */
-	private readonly _healthInterval: number;
-
-	/**
-	 * Cached result from the most recent health check lifecycle.
-	 * @internal
-	 */
-	private _lastHealthResult: IHealth[];
-
-	/**
-	 * Unix timestamp (ms) at which the last full health check ran.
-	 * @internal
-	 */
-	private _lastHealthTime: number;
 
 	/**
 	 * The entity storage for the background tasks keys.
@@ -230,11 +207,6 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		this._inFlightTaskIds = new Map<string, Set<string>>();
 		this._started = false;
 		this._lastCleanup = 0;
-		this._healthInterval =
-			options?.config?.healthIntervalMs ?? BackgroundTaskService._DEFAULT_HEALTH_INTERVAL;
-		this._lastHealthResult = [];
-		this._lastHealthTime = 0;
-
 		const validationErrors: IValidationFailure[] = [];
 		if (!Is.undefined(options?.config?.taskInterval)) {
 			Guards.integer(
@@ -703,28 +675,20 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	}
 
 	/**
-	 * Returns the health status by running a full task register/create/verify/unregister lifecycle.
-	 * @param lastTimestamp The Unix timestamp (ms) recorded at the start of the previous cycle.
-	 * @returns The health status of the component.
+	 * Returns the application health status by running a full task register/create/verify/unregister lifecycle.
+	 * Returns undefined as the result will be provided asynchronously via the callback.
+	 * @param callback The callback to invoke when the deferred health result is ready.
+	 * @returns undefined as the result is provided via the callback.
 	 */
-	public async health(lastTimestamp: number): Promise<IHealth[]> {
-		if (this._lastHealthTime > 0 && lastTimestamp - this._lastHealthTime < this._healthInterval) {
-			return this._lastHealthResult;
-		}
-
+	public async healthApplication(
+		callback: HealthApplicationCallback
+	): Promise<IHealth[] | undefined> {
 		const nonce = RandomHelper.generateUuidV7("compact");
 		let taskId: string | undefined;
 
 		const finalize = async (healthStatus: HealthStatus, error?: unknown): Promise<void> => {
-			this._lastHealthResult = [
-				{
-					source: BackgroundTaskService.CLASS_NAME,
-					category: HealthCategory.Application,
-					status: healthStatus,
-					error: !Is.undefined(error) ? BaseError.fromError(error) : undefined
-				}
-			];
 			clearTimeout(timeoutId);
+			await this.unregisterHandler(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE);
 			if (Is.stringValue(taskId)) {
 				try {
 					await this.remove(taskId);
@@ -732,7 +696,14 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					// Best-effort cleanup; the task will be removed on the next retained cleanup sweep.
 				}
 			}
-			await this.unregisterHandler(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE);
+			await callback([
+				{
+					source: BackgroundTaskService.CLASS_NAME,
+					category: HealthCategory.Application,
+					status: healthStatus,
+					error: !Is.undefined(error) ? BaseError.fromError(error) : undefined
+				}
+			]);
 		};
 
 		const timeoutId = setTimeout(async () => {
@@ -770,8 +741,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			await finalize(HealthStatus.Error, err);
 		}
 
-		this._lastHealthTime = lastTimestamp > 0 ? lastTimestamp : Date.now();
-		return this._lastHealthResult;
+		return undefined;
 	}
 
 	/**

@@ -256,7 +256,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			// Trigger immediately to catch up on any missed tasks
 			await this.triggerScheduledTasks();
 			// Re-check after the await: stop() may have been called while triggerScheduledTasks() was running.
-			// At that point _timer was still undefined so stopTimer() was a no-op — without this guard,
+			// At that point _timer was still undefined so stopTimer() was a no-op - without this guard,
 			// setInterval would create a timer that is never cleaned up.
 			if (this._started) {
 				this._timer = globalThis.setInterval(async () => {

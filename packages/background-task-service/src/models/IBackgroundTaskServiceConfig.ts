@@ -31,11 +31,6 @@ export interface IBackgroundTaskServiceConfig {
 	workerShutdownTimeout?: number;
 
 	/**
-	 * How often the full health lifecycle (create/verify/delete) runs, in milliseconds. Defaults to 300000ms (5 minutes).
-	 */
-	healthIntervalMs?: number;
-
-	/**
 	 * The url of the handler to use for health checks. If not provided, the default health check handler will be used.
 	 */
 	overrideHealthCheckHandler?: string;

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0.
 import os from "node:os";
 import path from "node:path";
+import type { IHealth } from "@twin.org/api-models";
 import type { IBackgroundTask } from "@twin.org/background-task-models";
 import { TaskStatus } from "@twin.org/background-task-models";
 import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
@@ -975,7 +976,7 @@ describe("BackgroundTaskService", () => {
 		await backgroundTaskConnector.start();
 
 		// Create the task first so the storage write from create() completes before
-		// the spy is installed — any subsequent set() call comes from workerProcessTasks.
+		// the spy is installed - any subsequent set() call comes from workerProcessTasks.
 		await backgroundTaskConnector.create("retry-type", { counter: 0 }, { retainFor: 10000 });
 
 		// Throw exactly once on the next set() call (the "set status to Processing"
@@ -1008,7 +1009,7 @@ describe("BackgroundTaskService", () => {
 		// (in-flight-for-type + 1) candidates regardless of other types.
 		const backgroundTaskConnector = makeService();
 
-		// Slow type — blocks workers so _inFlightTaskIds grows for "slow-type".
+		// Slow type - blocks workers so _inFlightTaskIds grows for "slow-type".
 		await backgroundTaskConnector.registerHandler(
 			"slow-type",
 			`file://${path.join(__dirname, "testModule.js")}`,
@@ -1016,7 +1017,7 @@ describe("BackgroundTaskService", () => {
 			undefined,
 			{ maxWorkerCount: 3, idleShutdownTimeout: -1 }
 		);
-		// Fast type — must be dispatched promptly regardless of slow-type in-flight count.
+		// Fast type - must be dispatched promptly regardless of slow-type in-flight count.
 		await backgroundTaskConnector.registerHandler(
 			"fast-type",
 			`file://${path.join(__dirname, "testModule.js")}`,
@@ -1348,7 +1349,7 @@ describe("BackgroundTaskService", () => {
 				"terminate-type",
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod"
-				// idleShutdownTimeout defaults to 0 — immediate cleanup after each task
+				// idleShutdownTimeout defaults to 0 - immediate cleanup after each task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("terminate-type", { counter: 0 }, { retainFor: 10000 });
@@ -1384,7 +1385,7 @@ describe("BackgroundTaskService", () => {
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod",
 				undefined,
-				{ idleShutdownTimeout: -1 } // keep alive — worker survives the task
+				{ idleShutdownTimeout: -1 } // keep alive - worker survives the task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("stop-type", { counter: 0 }, { retainFor: 10000 });
@@ -1451,7 +1452,7 @@ describe("BackgroundTaskService", () => {
 			// Worker is still alive (idleShutdownTimeout: -1); shutdownMethod not yet called
 			expect(shutdownMethodCompleted).toBe(false);
 
-			// stop() should call shutdownMethod before terminating — currently FAILS (red)
+			// stop() should call shutdownMethod before terminating - currently FAILS (red)
 			await backgroundTaskService.stop();
 			expect(shutdownMethodCompleted).toBe(true);
 			expect(terminateSpy).toHaveBeenCalledOnce();
@@ -1485,7 +1486,7 @@ describe("BackgroundTaskService", () => {
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod",
 				undefined,
-				{ idleShutdownTimeout: -1 } // keep alive — worker stays in pool after task
+				{ idleShutdownTimeout: -1 } // keep alive - worker stays in pool after task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("unregister-type", { counter: 0 }, { retainFor: 10000 });
@@ -1523,7 +1524,7 @@ describe("BackgroundTaskService", () => {
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("crash-type", {}, { retainFor: 10000 });
 
-			// Wait until the task error is written to storage — that proves
+			// Wait until the task error is written to storage - that proves
 			// taskFinishedProcessing ran. Then give cleanupWorker a moment to follow.
 			await waitForError();
 			await new Promise(resolve => setTimeout(resolve, 50));
@@ -1611,22 +1612,7 @@ describe("BackgroundTaskService", () => {
 	});
 
 	describe("health check lifecycle", () => {
-		async function waitForHealthResult(
-			service: BackgroundTaskService,
-			timeoutMs: number = 5000
-		): Promise<void> {
-			const deadline = Date.now() + timeoutMs;
-			while (Date.now() < deadline) {
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				if ((service as any)._lastHealthResult.length > 0) {
-					return;
-				}
-				await new Promise(resolve => setTimeout(resolve, 50));
-			}
-			throw new Error("Timeout waiting for health result");
-		}
-
-		test("health returns ok and application category on a successful round-trip", async () => {
+		test("healthApplication calls callback with ok and application category on a successful round-trip", async () => {
 			const backgroundTaskService = makeService({
 				config: {
 					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
@@ -1634,45 +1620,35 @@ describe("BackgroundTaskService", () => {
 			});
 			await backgroundTaskService.start();
 
-			await backgroundTaskService.health(Date.now());
-			await waitForHealthResult(backgroundTaskService);
+			let callbackResult: IHealth[] | undefined;
+			let callbackResolved: () => void;
+			const callbackPromise = new Promise<void>(resolve => {
+				callbackResolved = resolve;
+			});
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const result = (backgroundTaskService as any)._lastHealthResult;
-			expect(result).toHaveLength(1);
-			expect(result[0].source).toEqual(BackgroundTaskService.CLASS_NAME);
-			expect(result[0].category).toEqual("application");
-			expect(result[0].status).toEqual("ok");
-			expect(result[0].error).toBeUndefined();
+			const healthPromise = backgroundTaskService.healthApplication(async result => {
+				callbackResult = result;
+				callbackResolved();
+			});
 
-			// Handler unregistered and task removed after settle()
+			await healthPromise;
+			await callbackPromise;
+
+			expect(callbackResult).toHaveLength(1);
+			expect(callbackResult?.[0].source).toEqual(BackgroundTaskService.CLASS_NAME);
+			expect(callbackResult?.[0].category).toEqual("application");
+			expect(callbackResult?.[0].status).toEqual("ok");
+			expect(callbackResult?.[0].error).toBeUndefined();
+
+			// Allow cleanup (remove + unregisterHandler) to complete after the callback.
+			await new Promise(resolve => setTimeout(resolve, 100));
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			expect((backgroundTaskService as any)._taskHandlers["health-check"]).toBeUndefined();
 			const store = await backgroundTaskEntityStorageConnector.getStore();
 			expect(store.length).toEqual(0);
 		});
 
-		test("health returns the cached result when called within the healthIntervalMs", async () => {
-			const backgroundTaskService = makeService({
-				config: {
-					healthIntervalMs: 300_000,
-					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
-				}
-			});
-			await backgroundTaskService.start();
-
-			const ts = Date.now();
-			await backgroundTaskService.health(ts);
-			await waitForHealthResult(backgroundTaskService);
-
-			// Second call within interval — returns the same cached array reference
-			const first = await backgroundTaskService.health(ts + 1000);
-			expect(first[0].status).toEqual("ok");
-			const second = await backgroundTaskService.health(ts + 2000);
-			expect(second).toBe(first);
-		});
-
-		test("health records error when task creation fails", async () => {
+		test("healthApplication calls callback with error when task creation fails", async () => {
 			const backgroundTaskService = makeService({
 				config: {
 					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
@@ -1684,13 +1660,21 @@ describe("BackgroundTaskService", () => {
 				new Error("storage unavailable")
 			);
 
-			await backgroundTaskService.health(Date.now());
-			await waitForHealthResult(backgroundTaskService);
+			let callbackResult: IHealth[] | undefined;
+			let callbackResolved: () => void;
+			const callbackPromise = new Promise<void>(resolve => {
+				callbackResolved = resolve;
+			});
 
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			const result = (backgroundTaskService as any)._lastHealthResult;
-			expect(result[0].status).toEqual("error");
-			expect(result[0].error).toBeDefined();
+			const healthPromise = backgroundTaskService.healthApplication(async result => {
+				callbackResult = result;
+				callbackResolved();
+			});
+
+			await healthPromise;
+			await callbackPromise;
+			expect(callbackResult?.[0].status).toEqual("error");
+			expect(callbackResult?.[0].error).toBeDefined();
 		});
 	});
 });
