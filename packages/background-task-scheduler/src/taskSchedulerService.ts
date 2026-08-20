@@ -293,6 +293,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			for (const taskTime of task.times) {
 				if (!Is.empty(taskTime.nextTriggerTime) && taskTime.nextTriggerTime <= now) {
 					let taskStarted = false;
+					let taskStartTime = 0;
 
 					try {
 						const scheduledTask = await this._scheduledTaskEntityStorageConnector.get(taskId);
@@ -338,6 +339,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 							}
 
 							taskStarted = true;
+							taskStartTime = Date.now();
 							await task.taskCallback();
 						}
 					} catch (error) {
@@ -347,12 +349,24 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 							ts: Date.now(),
 							message: "taskFailed",
 							data: {
-								id: taskId
+								id: taskId,
+								duration: taskStarted ? Date.now() - taskStartTime : 0
 							},
 							error: BaseError.fromError(error)
 						});
 					} finally {
 						if (taskStarted) {
+							await this._logging?.log({
+								level: "info",
+								source: TaskSchedulerService.CLASS_NAME,
+								ts: Date.now(),
+								message: "taskCompleted",
+								data: {
+									id: taskId,
+									duration: Date.now() - taskStartTime
+								}
+							});
+
 							// Reset the last run time to allow future triggers, even if the task callback fails
 							await this._scheduledTaskEntityStorageConnector.set({
 								id: taskId,

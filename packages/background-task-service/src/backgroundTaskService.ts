@@ -1166,6 +1166,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 				await this.processRetention(task);
 			}
 
+			const duration = Date.now() - new Date(task.dateModified).getTime();
+
 			if (task.status === TaskStatus.Failed) {
 				await this._logging?.log({
 					level: "error",
@@ -1175,7 +1177,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					data: {
 						id: task.id,
 						type: task.type,
-						status: task.status
+						status: task.status,
+						duration
 					},
 					error: BaseError.fromError(err)
 				});
@@ -1188,7 +1191,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					data: {
 						id: task.id,
 						type: task.type,
-						status: task.status
+						status: task.status,
+						duration
 					}
 				});
 			}
