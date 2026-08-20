@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.2-next.5](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.4...background-task-service-v0.9.2-next.5) (2026-08-20)
+
+
+### Features
+
+* log duration for scheduled and background tasks ([fc52686](https://github.com/iotaledger/twin-background-task/commit/fc52686607354b03afa009264ff1f5ce98f64ecd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.2-next.4 to 0.9.2-next.5
+
 ## [0.9.2-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.2-next.3...background-task-service-v0.9.2-next.4) (2026-08-07)
 
 
