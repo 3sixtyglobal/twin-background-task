@@ -1,14 +1,15 @@
 {
 	"error": {
 		"taskSchedulerService": {
-			"taskFailed": "Task with id \"{id}\" failed to run"
+			"taskFailed": "Task with id \"{id}\" failed after {duration} ms"
 		}
 	},
 	"info": {
 		"taskSchedulerService": {
 			"taskAdded": "Task with id \"{id}\" added",
 			"taskRemoved": "Task with id \"{id}\" removed",
-			"taskTriggered": "Task with id \"{id}\" triggered at time \"{time}\""
+			"taskTriggered": "Task with id \"{id}\" triggered at time \"{time}\"",
+			"taskCompleted": "Task with id \"{id}\" completed in {duration} ms"
 		}
 	},
 	"warn": {

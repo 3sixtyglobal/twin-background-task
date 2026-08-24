@@ -42,3 +42,11 @@ The maximum number of workers to use for processing tasks, defaults to the numbe
 
 How long in milliseconds stop() waits for each handler's workers to finish their shutdownMethod
 before force-terminating them. Defaults to 5000.
+
+***
+
+### overrideHealthCheckHandler? {#overridehealthcheckhandler}
+
+> `optional` **overrideHealthCheckHandler?**: `string`
+
+The url of the handler to use for health checks. If not provided, the default health check handler will be used.

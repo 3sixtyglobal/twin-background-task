@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0.
 import os from "node:os";
 import path from "node:path";
+import type { IHealth } from "@twin.org/api-models";
 import type { IBackgroundTask } from "@twin.org/background-task-models";
 import { TaskStatus } from "@twin.org/background-task-models";
 import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
-import { Converter, Is, RandomHelper } from "@twin.org/core";
-import { EngineCoreFactory, type IEngineCore } from "@twin.org/engine-models";
+import { Converter, Factory, Is, RandomHelper } from "@twin.org/core";
 import {
 	EntitySchemaFactory,
 	EntitySchemaHelper,
@@ -764,9 +764,9 @@ describe("BackgroundTaskService", () => {
 			config: { taskInterval: 1000 }
 		});
 
-		EngineCoreFactory.register(
+		Factory.createFactory<{ getCloneData: () => unknown }>("engine-core").register(
 			"engine",
-			() => ({ getCloneData: () => ({ foo: "bar" }) }) as unknown as IEngineCore
+			() => ({ getCloneData: () => ({ foo: "bar" }) })
 		);
 
 		await backgroundTaskConnector.registerHandler(
@@ -872,6 +872,51 @@ describe("BackgroundTaskService", () => {
 		expect(store[4].result).toEqual(5);
 	});
 
+	test("dispatches a single task once when multiple workers are idle", async () => {
+		const backgroundTaskConnector = makeService();
+		const observedTransitions: string[] = [];
+
+		await backgroundTaskConnector.registerHandler(
+			"idle-fanout-type",
+			`file://${path.join(__dirname, "testModule.js")}`,
+			"testMethodSlow",
+			async task => {
+				if (task.id === targetTaskId) {
+					observedTransitions.push(task.status);
+				}
+			},
+			{
+				maxWorkerCount: 2,
+				idleShutdownTimeout: -1
+			}
+		);
+
+		await backgroundTaskConnector.start();
+
+		// Warm up both workers so they exist and are simultaneously idle.
+		await backgroundTaskConnector.create("idle-fanout-type", { counter: 0 }, { retainFor: 10000 });
+		await backgroundTaskConnector.create("idle-fanout-type", { counter: 0 }, { retainFor: 10000 });
+		await waitForStatus("success", 1);
+
+		const serviceInternals = backgroundTaskConnector as unknown as {
+			_workers: { [workerId: string]: unknown };
+		};
+		expect(Object.keys(serviceInternals._workers)).toHaveLength(2);
+
+		const targetTaskId = await backgroundTaskConnector.create(
+			"idle-fanout-type",
+			{ counter: 0 },
+			{ retainFor: 10000 }
+		);
+		await waitForStatus("success", 2);
+
+		// Allow any erroneous duplicate dispatch to complete before assertions.
+		await new Promise(resolve => setTimeout(resolve, 700));
+
+		expect(observedTransitions.filter(status => status === TaskStatus.Processing)).toHaveLength(1);
+		expect(observedTransitions.filter(status => status === TaskStatus.Success)).toHaveLength(1);
+	});
+
 	test("does not dispatch the same task twice when two processing cycles overlap on the first activity (#177)", async () => {
 		const backgroundTaskConnector = makeService();
 
@@ -931,7 +976,7 @@ describe("BackgroundTaskService", () => {
 		await backgroundTaskConnector.start();
 
 		// Create the task first so the storage write from create() completes before
-		// the spy is installed — any subsequent set() call comes from workerProcessTasks.
+		// the spy is installed - any subsequent set() call comes from workerProcessTasks.
 		await backgroundTaskConnector.create("retry-type", { counter: 0 }, { retainFor: 10000 });
 
 		// Throw exactly once on the next set() call (the "set status to Processing"
@@ -964,7 +1009,7 @@ describe("BackgroundTaskService", () => {
 		// (in-flight-for-type + 1) candidates regardless of other types.
 		const backgroundTaskConnector = makeService();
 
-		// Slow type — blocks workers so _inFlightTaskIds grows for "slow-type".
+		// Slow type - blocks workers so _inFlightTaskIds grows for "slow-type".
 		await backgroundTaskConnector.registerHandler(
 			"slow-type",
 			`file://${path.join(__dirname, "testModule.js")}`,
@@ -972,7 +1017,7 @@ describe("BackgroundTaskService", () => {
 			undefined,
 			{ maxWorkerCount: 3, idleShutdownTimeout: -1 }
 		);
-		// Fast type — must be dispatched promptly regardless of slow-type in-flight count.
+		// Fast type - must be dispatched promptly regardless of slow-type in-flight count.
 		await backgroundTaskConnector.registerHandler(
 			"fast-type",
 			`file://${path.join(__dirname, "testModule.js")}`,
@@ -1304,7 +1349,7 @@ describe("BackgroundTaskService", () => {
 				"terminate-type",
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod"
-				// idleShutdownTimeout defaults to 0 — immediate cleanup after each task
+				// idleShutdownTimeout defaults to 0 - immediate cleanup after each task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("terminate-type", { counter: 0 }, { retainFor: 10000 });
@@ -1340,7 +1385,7 @@ describe("BackgroundTaskService", () => {
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod",
 				undefined,
-				{ idleShutdownTimeout: -1 } // keep alive — worker survives the task
+				{ idleShutdownTimeout: -1 } // keep alive - worker survives the task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("stop-type", { counter: 0 }, { retainFor: 10000 });
@@ -1407,7 +1452,7 @@ describe("BackgroundTaskService", () => {
 			// Worker is still alive (idleShutdownTimeout: -1); shutdownMethod not yet called
 			expect(shutdownMethodCompleted).toBe(false);
 
-			// stop() should call shutdownMethod before terminating — currently FAILS (red)
+			// stop() should call shutdownMethod before terminating - currently FAILS (red)
 			await backgroundTaskService.stop();
 			expect(shutdownMethodCompleted).toBe(true);
 			expect(terminateSpy).toHaveBeenCalledOnce();
@@ -1441,7 +1486,7 @@ describe("BackgroundTaskService", () => {
 				`file://${path.join(__dirname, "testModule.js")}`,
 				"testMethod",
 				undefined,
-				{ idleShutdownTimeout: -1 } // keep alive — worker stays in pool after task
+				{ idleShutdownTimeout: -1 } // keep alive - worker stays in pool after task
 			);
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("unregister-type", { counter: 0 }, { retainFor: 10000 });
@@ -1479,7 +1524,7 @@ describe("BackgroundTaskService", () => {
 			await backgroundTaskService.start();
 			await backgroundTaskService.create("crash-type", {}, { retainFor: 10000 });
 
-			// Wait until the task error is written to storage — that proves
+			// Wait until the task error is written to storage - that proves
 			// taskFinishedProcessing ran. Then give cleanupWorker a moment to follow.
 			await waitForError();
 			await new Promise(resolve => setTimeout(resolve, 50));
@@ -1563,6 +1608,73 @@ describe("BackgroundTaskService", () => {
 			expect(store[0].threadId).toEqual("main");
 			expect(store[0].status).toEqual(TaskStatus.Success);
 			expect(store[0].result).toMatchObject({ counter: 6 });
+		});
+	});
+
+	describe("health check lifecycle", () => {
+		test("healthApplication calls callback with ok and application category on a successful round-trip", async () => {
+			const backgroundTaskService = makeService({
+				config: {
+					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
+				}
+			});
+			await backgroundTaskService.start();
+
+			let callbackResult: IHealth[] | undefined;
+			let callbackResolved: () => void;
+			const callbackPromise = new Promise<void>(resolve => {
+				callbackResolved = resolve;
+			});
+
+			const healthPromise = backgroundTaskService.healthApplication(async result => {
+				callbackResult = result;
+				callbackResolved();
+			});
+
+			await healthPromise;
+			await callbackPromise;
+
+			expect(callbackResult).toHaveLength(1);
+			expect(callbackResult?.[0].source).toEqual(BackgroundTaskService.CLASS_NAME);
+			expect(callbackResult?.[0].category).toEqual("application");
+			expect(callbackResult?.[0].status).toEqual("ok");
+			expect(callbackResult?.[0].error).toBeUndefined();
+
+			// Allow cleanup (remove + unregisterHandler) to complete after the callback.
+			await new Promise(resolve => setTimeout(resolve, 100));
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			expect((backgroundTaskService as any)._taskHandlers["health-check"]).toBeUndefined();
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store.length).toEqual(0);
+		});
+
+		test("healthApplication calls callback with error when task creation fails", async () => {
+			const backgroundTaskService = makeService({
+				config: {
+					overrideHealthCheckHandler: `file://${path.join(__dirname, "..", "dist", "es", "healthCheckHandler.js")}`
+				}
+			});
+			await backgroundTaskService.start();
+
+			vi.spyOn(backgroundTaskService, "create").mockRejectedValueOnce(
+				new Error("storage unavailable")
+			);
+
+			let callbackResult: IHealth[] | undefined;
+			let callbackResolved: () => void;
+			const callbackPromise = new Promise<void>(resolve => {
+				callbackResolved = resolve;
+			});
+
+			const healthPromise = backgroundTaskService.healthApplication(async result => {
+				callbackResult = result;
+				callbackResolved();
+			});
+
+			await healthPromise;
+			await callbackPromise;
+			expect(callbackResult?.[0].status).toEqual("error");
+			expect(callbackResult?.[0].error).toBeDefined();
 		});
 	});
 });

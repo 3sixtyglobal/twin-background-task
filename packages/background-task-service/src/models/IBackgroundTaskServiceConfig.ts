@@ -29,4 +29,9 @@ export interface IBackgroundTaskServiceConfig {
 	 * before force-terminating them. Defaults to 5000.
 	 */
 	workerShutdownTimeout?: number;
+
+	/**
+	 * The url of the handler to use for health checks. If not provided, the default health check handler will be used.
+	 */
+	overrideHealthCheckHandler?: string;
 }

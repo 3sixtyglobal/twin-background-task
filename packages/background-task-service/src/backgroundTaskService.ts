@@ -3,6 +3,13 @@
 import os from "node:os";
 import { isMainThread, threadId as workerThreadId } from "node:worker_threads";
 import {
+	HealthCategory,
+	HealthStatus,
+	type HealthApplicationCallback,
+	type IHealth,
+	type IHealthProviderComponent
+} from "@twin.org/api-models";
+import {
 	type IBackgroundTask,
 	type IBackgroundTaskComponent,
 	TaskStatus
@@ -12,6 +19,7 @@ import {
 	BaseError,
 	Coerce,
 	ComponentFactory,
+	Factory,
 	GeneralError,
 	Guards,
 	Is,
@@ -22,7 +30,6 @@ import {
 	Urn,
 	Validation
 } from "@twin.org/core";
-import { EngineCoreFactory } from "@twin.org/engine-models";
 import {
 	ComparisonOperator,
 	type EntityCondition,
@@ -44,7 +51,7 @@ import type { IBackgroundTaskWorker } from "./models/IBackgroundTaskWorker.js";
 /**
  * Class for performing background task operations.
  */
-export class BackgroundTaskService implements IBackgroundTaskComponent {
+export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthProviderComponent {
 	/**
 	 * Runtime name for the class.
 	 */
@@ -78,6 +85,18 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	 * @internal
 	 */
 	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
+
+	/**
+	 * The timeout in milliseconds for a health-check task to complete.
+	 * @internal
+	 */
+	private static readonly _HEALTH_CHECK_TASK_TIMEOUT: number = 30_000;
+
+	/**
+	 * Reserved task type key used by the built-in health-check handler.
+	 * @internal
+	 */
+	private static readonly _HEALTH_CHECK_TASK_TYPE: string = "health-check";
 
 	/**
 	 * The handlers for tasks.
@@ -159,6 +178,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	private readonly _workerShutdownTimeout: number;
 
 	/**
+	 * The url of the handler to use for health checks. If not provided, the default health check handler will be used.
+	 * @internal
+	 */
+	private readonly _overrideHealthCheckHandler: string;
+
+	/**
 	 * Create a new instance of BackgroundTaskService.
 	 * @param options The options for the service.
 	 */
@@ -182,7 +207,6 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._inFlightTaskIds = new Map<string, Set<string>>();
 		this._started = false;
 		this._lastCleanup = 0;
-
 		const validationErrors: IValidationFailure[] = [];
 		if (!Is.undefined(options?.config?.taskInterval)) {
 			Guards.integer(
@@ -241,6 +265,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 		this._workerShutdownTimeout =
 			options?.config?.workerShutdownTimeout ??
 			BackgroundTaskService._DEFAULT_WORKER_SHUTDOWN_TIMEOUT;
+		this._overrideHealthCheckHandler =
+			options?.config?.overrideHealthCheckHandler ??
+			new URL("./healthCheckHandler.js", import.meta.url).href;
 	}
 
 	/**
@@ -648,6 +675,76 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 	}
 
 	/**
+	 * Returns the application health status by running a full task register/create/verify/unregister lifecycle.
+	 * Returns undefined as the result will be provided asynchronously via the callback.
+	 * @param callback The callback to invoke when the deferred health result is ready.
+	 * @returns undefined as the result is provided via the callback.
+	 */
+	public async healthApplication(
+		callback: HealthApplicationCallback
+	): Promise<IHealth[] | undefined> {
+		const nonce = RandomHelper.generateUuidV7("compact");
+		let taskId: string | undefined;
+
+		const finalize = async (healthStatus: HealthStatus, error?: unknown): Promise<void> => {
+			clearTimeout(timeoutId);
+			await this.unregisterHandler(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE);
+			if (Is.stringValue(taskId)) {
+				try {
+					await this.remove(taskId);
+				} catch {
+					// Best-effort cleanup; the task will be removed on the next retained cleanup sweep.
+				}
+			}
+			await callback([
+				{
+					source: BackgroundTaskService.CLASS_NAME,
+					category: HealthCategory.Application,
+					status: healthStatus,
+					error: !Is.undefined(error) ? BaseError.fromError(error) : undefined
+				}
+			]);
+		};
+
+		const timeoutId = setTimeout(async () => {
+			await finalize(
+				HealthStatus.Error,
+				new GeneralError(BackgroundTaskService.CLASS_NAME, "healthCheckTimeout", {
+					timeout: BackgroundTaskService._HEALTH_CHECK_TASK_TIMEOUT
+				})
+			);
+		}, BackgroundTaskService._HEALTH_CHECK_TASK_TIMEOUT);
+
+		try {
+			await this.registerHandler(
+				BackgroundTaskService._HEALTH_CHECK_TASK_TYPE,
+				this._overrideHealthCheckHandler,
+				"execute",
+				async (task: IBackgroundTask) => {
+					if (
+						task.status === TaskStatus.Success ||
+						task.status === TaskStatus.Failed ||
+						task.status === TaskStatus.Cancelled
+					) {
+						await finalize(
+							task.result === nonce ? HealthStatus.Ok : HealthStatus.Error,
+							task.error
+						);
+					}
+				}
+			);
+
+			taskId = await this.create(BackgroundTaskService._HEALTH_CHECK_TASK_TYPE, nonce, {
+				retainFor: -1
+			});
+		} catch (err) {
+			await finalize(HealthStatus.Error, err);
+		}
+
+		return undefined;
+	}
+
+	/**
 	 * Process the tasks of the specified type.
 	 * @param taskType The type of the task to process.
 	 * @returns A promise that resolves when the processing cycle for this task type is complete
@@ -717,6 +814,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 								await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
 								usedIdle = true;
 								dispatched = true;
+								break;
 							} else {
 								activeWorkerCount++;
 							}
@@ -868,7 +966,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					} else if (operation === "error") {
 						// The worker thread crashed with an uncaught exception. Record the
 						// task failure so retry logic runs, then force-clean the pool slot.
-						// We bypass shutdownIdleThread() because the thread is already dead —
+						// We bypass shutdownIdleThread() because the thread is already dead;
 						// postMessage would be silently dropped, leaving cleanupWorker unreachable.
 						await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, err);
 						await this.cleanupWorker(taskHandler, worker);
@@ -890,9 +988,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					}
 				});
 
-				// Clone the current engine and set it to the worker initialise method
-				const engine = EngineCoreFactory.getIfExists("engine");
-				const engineCloneData = engine?.getCloneData();
+				// Use a replica of the IEngineCore interface to avoid a circular dependency on the engine-core package.
+				const engineCloneData = Factory.getFactory("engine-core")
+					?.getIfExists<{ getCloneData: () => unknown }>("engine")
+					?.getCloneData();
 
 				const currentContextIds = await ContextIdStore.getContextIds();
 				worker.module.executeMethod(
@@ -924,9 +1023,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 			}
 		});
 
-		// Send the task to the worker worker for processing
-		const engine = EngineCoreFactory.getIfExists("engine");
-		const engineCloneData = engine?.getCloneData();
+		// Use a replica of the IEngineCore interface to avoid a circular dependency on the engine-core package.
+		const engineCloneData = Factory.getFactory("engine-core")
+			?.getIfExists<{ getCloneData: () => unknown }>("engine")
+			?.getCloneData();
 		worker.module.executeMethod(
 			taskHandler.processingMethod,
 			[engineCloneData, nextTask.payload],
@@ -1066,6 +1166,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 				await this.processRetention(task);
 			}
 
+			const duration = Date.now() - new Date(task.dateModified).getTime();
+
 			if (task.status === TaskStatus.Failed) {
 				await this._logging?.log({
 					level: "error",
@@ -1075,7 +1177,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					data: {
 						id: task.id,
 						type: task.type,
-						status: task.status
+						status: task.status,
+						duration
 					},
 					error: BaseError.fromError(err)
 				});
@@ -1088,7 +1191,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent {
 					data: {
 						id: task.id,
 						type: task.type,
-						status: task.status
+						status: task.status,
+						duration
 					}
 				});
 			}

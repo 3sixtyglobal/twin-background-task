@@ -275,6 +275,47 @@ describe("TaskSchedulerService", () => {
 		expect(triggerCount).toEqual(1);
 	});
 
+	test("skips missed interval slots instead of replaying them back to back", async () => {
+		const taskScheduler = new TaskSchedulerService({
+			config: {
+				intervalMs: 100
+			}
+		});
+		await taskScheduler.start();
+
+		const threeMinutesMs = 3 * 60 * 1000;
+		let triggerCount = 0;
+		await taskScheduler.addTask(
+			"testTask",
+			[
+				{
+					nextTriggerTime: Date.now() - threeMinutesMs,
+					intervalMinutes: 1
+				}
+			],
+			async () => {
+				triggerCount++;
+				await new Promise(resolve => setTimeout(resolve, 150));
+			}
+		);
+
+		// Give the initial overdue run enough time to complete, plus extra ticks that
+		// would previously have replayed each missed minute immediately.
+		await new Promise(resolve => setTimeout(resolve, 700));
+
+		expect(triggerCount).toEqual(1);
+
+		const taskInfo = await taskScheduler.tasksInfo();
+		expect(taskInfo.tasks).toEqual({
+			testTask: [
+				{
+					intervalMinutes: 1,
+					nextTriggerTime: 60000
+				}
+			]
+		});
+	});
+
 	test("can throw an error in a task and continue", async () => {
 		const taskScheduler = new TaskSchedulerService({
 			config: {

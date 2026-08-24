@@ -5,6 +5,7 @@ Class for performing background task operations.
 ## Implements
 
 - `IBackgroundTaskComponent`
+- `IHealthProviderComponent`
 
 ## Constructors
 
@@ -455,3 +456,30 @@ The list of tasks.
 #### Implementation of
 
 `IBackgroundTaskComponent.query`
+
+***
+
+### healthApplication() {#healthapplication}
+
+> **healthApplication**(`callback`): `Promise`\<`IHealth`[] \| `undefined`\>
+
+Returns the application health status by running a full task register/create/verify/unregister lifecycle.
+Returns undefined as the result will be provided asynchronously via the callback.
+
+#### Parameters
+
+##### callback
+
+`HealthApplicationCallback`
+
+The callback to invoke when the deferred health result is ready.
+
+#### Returns
+
+`Promise`\<`IHealth`[] \| `undefined`\>
+
+undefined as the result is provided via the callback.
+
+#### Implementation of
+
+`IHealthProviderComponent.healthApplication`

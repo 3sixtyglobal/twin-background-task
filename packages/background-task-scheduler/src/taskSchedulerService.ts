@@ -219,21 +219,28 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 	 */
 	private calculateNextTriggerTime(time: IScheduledTaskTime): number {
 		let nextTriggerTime = time.nextTriggerTime;
+		const dayMs = 24 * 60 * 60 * 1000;
+		const hourMs = 60 * 60 * 1000;
+		const minuteMs = 60 * 1000;
 
 		if (Is.empty(nextTriggerTime)) {
 			nextTriggerTime = Date.now();
 		}
 
-		if (!Is.empty(time.intervalDays)) {
-			nextTriggerTime += time.intervalDays * 24 * 60 * 60 * 1000;
-		}
+		let intervalMs = 0;
+		intervalMs += (time.intervalDays ?? 0) * dayMs;
+		intervalMs += (time.intervalHours ?? 0) * hourMs;
+		intervalMs += (time.intervalMinutes ?? 0) * minuteMs;
 
-		if (!Is.empty(time.intervalHours)) {
-			nextTriggerTime += time.intervalHours * 60 * 60 * 1000;
-		}
-
-		if (!Is.empty(time.intervalMinutes)) {
-			nextTriggerTime += time.intervalMinutes * 60 * 1000;
+		if (intervalMs > 0) {
+			// Move to the next regular slot and, if that slot is already in the past,
+			// skip missed slots so the next trigger is strictly in the future.
+			nextTriggerTime += intervalMs;
+			const now = Date.now();
+			if (nextTriggerTime <= now) {
+				const intervalsToAdvance = Math.floor((now - nextTriggerTime) / intervalMs) + 1;
+				nextTriggerTime += intervalsToAdvance * intervalMs;
+			}
 		}
 
 		return nextTriggerTime;
@@ -249,7 +256,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			// Trigger immediately to catch up on any missed tasks
 			await this.triggerScheduledTasks();
 			// Re-check after the await: stop() may have been called while triggerScheduledTasks() was running.
-			// At that point _timer was still undefined so stopTimer() was a no-op — without this guard,
+			// At that point _timer was still undefined so stopTimer() was a no-op - without this guard,
 			// setInterval would create a timer that is never cleaned up.
 			if (this._started) {
 				this._timer = globalThis.setInterval(async () => {
@@ -286,6 +293,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 			for (const taskTime of task.times) {
 				if (!Is.empty(taskTime.nextTriggerTime) && taskTime.nextTriggerTime <= now) {
 					let taskStarted = false;
+					let taskStartTime = 0;
 
 					try {
 						const scheduledTask = await this._scheduledTaskEntityStorageConnector.get(taskId);
@@ -331,6 +339,7 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 							}
 
 							taskStarted = true;
+							taskStartTime = Date.now();
 							await task.taskCallback();
 						}
 					} catch (error) {
@@ -340,12 +349,24 @@ export class TaskSchedulerService implements ITaskSchedulerComponent {
 							ts: Date.now(),
 							message: "taskFailed",
 							data: {
-								id: taskId
+								id: taskId,
+								duration: taskStarted ? Date.now() - taskStartTime : 0
 							},
 							error: BaseError.fromError(error)
 						});
 					} finally {
 						if (taskStarted) {
+							await this._logging?.log({
+								level: "info",
+								source: TaskSchedulerService.CLASS_NAME,
+								ts: Date.now(),
+								message: "taskCompleted",
+								data: {
+									id: taskId,
+									duration: Date.now() - taskStartTime
+								}
+							});
+
 							// Reset the last run time to allow future triggers, even if the task callback fails
 							await this._scheduledTaskEntityStorageConnector.set({
 								id: taskId,
