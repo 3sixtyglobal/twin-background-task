@@ -1,6 +1,6 @@
 {
 	"name": "@twin.org/background-task-service",
-	"version": "0.9.3-next.0",
+	"version": "0.9.3-next.1",
 	"description": "Provides a storage-backed service for creating, managing, and executing background tasks",
 	"repository": {
 		"type": "git",
@@ -28,7 +28,7 @@
 		"dist:no-test": "npm run clean && npm run build && npm run test:build"
 	},
 	"dependencies": {
-		"@twin.org/background-task-models": "0.9.3-next.0",
+		"@twin.org/background-task-models": "0.9.3-next.1",
 		"@twin.org/api-models": "next",
 		"@twin.org/context": "next",
 		"@twin.org/core": "next",
