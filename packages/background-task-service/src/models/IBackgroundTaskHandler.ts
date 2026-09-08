@@ -28,9 +28,19 @@ export interface IBackgroundTaskHandler {
 	initialiseMethod?: string;
 
 	/**
+	 * Callback to provide additional parameters to spread when calling the initialiseMethod.
+	 */
+	initialiseMethodParams?: () => Promise<unknown[]>;
+
+	/**
 	 * The method to call to shutdown the task handler.
 	 */
 	shutdownMethod?: string;
+
+	/**
+	 * Callback to provide additional parameters to spread when calling the shutdownMethod.
+	 */
+	shutdownMethodParams?: () => Promise<unknown[]>;
 
 	/**
 	 * The maximum number of workers for this task handler.

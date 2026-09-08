@@ -19,7 +19,9 @@ export interface IBackgroundTaskComponent extends IComponent {
 	 * @param options.maxWorkerCount The maximum number of workers in the pool.
 	 * @param options.idleShutdownTimeout Terminate the worker after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
+	 * @param options.initialiseMethodParams Callback to provide additional parameters to spread when calling the initialiseMethod.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
+	 * @param options.shutdownMethodParams Callback to provide additional parameters to spread when calling the shutdownMethod.
 	 * @returns A promise that resolves when the handler is registered
 	 */
 	registerHandler<T, U>(
@@ -31,7 +33,9 @@ export interface IBackgroundTaskComponent extends IComponent {
 			maxWorkerCount?: number;
 			idleShutdownTimeout?: number;
 			initialiseMethod?: string;
+			initialiseMethodParams?: () => Promise<unknown[]>;
 			shutdownMethod?: string;
+			shutdownMethodParams?: () => Promise<unknown[]>;
 		}
 	): Promise<void>;
 
