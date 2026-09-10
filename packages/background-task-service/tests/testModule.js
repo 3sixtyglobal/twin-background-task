@@ -92,6 +92,17 @@ export async function testMethodSlow() {
 }
 
 /**
+ * Test method that stays in-progress for a payload-given duration.
+ * @param engineCloneData The engine clone data.
+ * @param payload The payload, with an optional ms duration.
+ * @returns The thread id.
+ */
+export async function testMethodConfigurableSlow(engineCloneData, payload) {
+	await new Promise(resolve => setTimeout(resolve, payload?.ms ?? 500));
+	return threadId;
+}
+
+/**
  * Test method for context ids.
  * @returns The context ids.
  */

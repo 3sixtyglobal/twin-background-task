@@ -6,7 +6,7 @@ import type { IHealth } from "@twin.org/api-models";
 import type { IBackgroundTask } from "@twin.org/background-task-models";
 import { TaskStatus } from "@twin.org/background-task-models";
 import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
-import { Converter, Factory, Is, RandomHelper } from "@twin.org/core";
+import { ComponentFactory, Converter, Factory, Is, RandomHelper } from "@twin.org/core";
 import {
 	EntitySchemaFactory,
 	EntitySchemaHelper,
@@ -16,6 +16,7 @@ import {
 } from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
 import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
+import type { ILogEntry } from "@twin.org/logging-models";
 import { ModuleHelper } from "@twin.org/modules";
 import { nameof } from "@twin.org/nameof";
 import { BackgroundTaskService } from "../src/backgroundTaskService.js";
@@ -96,6 +97,10 @@ async function waitForCallbackObservation(
 
 interface ISpyCallCounter {
 	mock: { calls: unknown[] };
+}
+
+interface ISpyCallArgsCounter {
+	mock: { calls: unknown[][] };
 }
 
 /**
@@ -1196,6 +1201,320 @@ describe("BackgroundTaskService", () => {
 		await waitForSpyCallCount(scheduleSpy, 1);
 
 		scheduleSpy.mockRestore();
+	});
+
+	describe("worker cap retry", () => {
+		/**
+		 * Wait for at least the given number of scheduleNextTaskProcessing calls for one type.
+		 * @param spy The spy on scheduleNextTaskProcessing.
+		 * @param taskType The task type to filter calls for.
+		 * @param callCount The expected call count for that type.
+		 */
+		async function waitForFilteredSpyCallCount(
+			spy: ISpyCallArgsCounter,
+			taskType: string,
+			callCount: number
+		): Promise<void> {
+			for (let i = 0; i < 50; i++) {
+				if (spy.mock.calls.filter(call => call[0] === taskType).length >= callCount) {
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			throw new Error(
+				`Timeout waiting for ${callCount} scheduleNextTaskProcessing calls for "${taskType}"`
+			);
+		}
+
+		/**
+		 * Wait for at least the given number of system workers to exist.
+		 * @param workers The service's internal worker map.
+		 * @param count The expected worker count.
+		 */
+		async function waitForWorkerCount(
+			workers: { [workerId: string]: unknown },
+			count: number
+		): Promise<void> {
+			for (let i = 0; i < 50; i++) {
+				if (Object.keys(workers).length >= count) {
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			throw new Error(`Timeout waiting for ${count} workers to be created`);
+		}
+
+		/**
+		 * Build a service with both system worker slots held (one permanently by type A, one by
+		 * type B) and a third type C registered but starved for the rest of the test.
+		 * @param loggingComponentType The logging component type to pass to the service, if any.
+		 * @param bHoldMs How long type B's task runs before its slot frees.
+		 * @returns The service and its internals cast for scheduleNextTaskProcessing spying.
+		 */
+		async function makeStarvedService(
+			loggingComponentType?: string,
+			bHoldMs = 3000
+		): Promise<{
+			backgroundTaskService: BackgroundTaskService;
+			serviceInternals: {
+				_workers: { [workerId: string]: unknown };
+				_taskHandlers: {
+					[taskType: string]: {
+						capReachedCount?: number;
+						capReachedLastLoggedMs?: number;
+						waitTimerId?: unknown;
+						workers: unknown[];
+					};
+				};
+				scheduleNextTaskProcessing(taskType: string, delayMs?: number): void;
+			};
+		}> {
+			const backgroundTaskService = makeService({
+				loggingComponentType,
+				config: { maxSystemWorkerCount: 2, taskInterval: 100 }
+			});
+			const serviceInternals = backgroundTaskService as unknown as {
+				_workers: { [workerId: string]: unknown };
+				_taskHandlers: {
+					[taskType: string]: {
+						capReachedCount?: number;
+						capReachedLastLoggedMs?: number;
+						waitTimerId?: unknown;
+						workers: unknown[];
+					};
+				};
+				scheduleNextTaskProcessing(taskType: string, delayMs?: number): void;
+			};
+
+			await backgroundTaskService.registerHandler(
+				"A",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				undefined,
+				{ idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("A", { counter: 0 }, { retainFor: 10_000 });
+			await waitForStatus(TaskStatus.Success, 0);
+
+			await backgroundTaskService.registerHandler(
+				"B",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethodConfigurableSlow"
+			);
+			await backgroundTaskService.create("B", { ms: bHoldMs }, { retainFor: 10_000 });
+
+			// Both slots are only actually held once B's worker exists, not merely once its task
+			// is queued; waiting on the count itself avoids guessing how long that takes.
+			await waitForWorkerCount(serviceInternals._workers, 2);
+
+			await backgroundTaskService.registerHandler(
+				"C",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod"
+			);
+
+			return { backgroundTaskService, serviceInternals };
+		}
+
+		test("backs off the retry wait after repeated cap-reached retries for the same type", async () => {
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService();
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await waitForFilteredSpyCallCount(scheduleSpy, "C", 4);
+
+				const delays = scheduleSpy.mock.calls
+					.filter(call => call[0] === "C")
+					.slice(0, 4)
+					.map(call => call[1]);
+
+				expect(delays).toEqual([100, 200, 400, 800]);
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
+
+		test("rate-limits the max system worker count warning while a type stays starved", async () => {
+			const logEntries: ILogEntry[] = [];
+			ComponentFactory.register("logging", () => ({
+				className: () => "MockLoggingComponent",
+				log: async (entry: ILogEntry) => {
+					logEntries.push(entry);
+				}
+			}));
+
+			try {
+				const { backgroundTaskService, serviceInternals } = await makeStarvedService("logging");
+				const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+				try {
+					const stalledEntries = (): ILogEntry[] =>
+						logEntries.filter(entry => entry.message === "maxSystemWorkerCountReached");
+
+					await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+					await waitForFilteredSpyCallCount(scheduleSpy, "C", 2);
+
+					expect(stalledEntries()).toHaveLength(1);
+					expect(stalledEntries()[0].data).toMatchObject({
+						type: "C",
+						maxSystemWorkerCount: 2,
+						count: 1
+					});
+
+					// Backdate the last-logged time as if the rate-limit window had already
+					// elapsed, so the next check logs again instead of waiting a real minute;
+					// this is what proves the limit is time-based, not "once per type ever".
+					serviceInternals._taskHandlers.C.capReachedLastLoggedMs = Date.now() - 60_000;
+					await waitForFilteredSpyCallCount(scheduleSpy, "C", 5);
+
+					expect(stalledEntries()).toHaveLength(2);
+					expect((stalledEntries()[1].data as { count: number }).count).toBeGreaterThan(1);
+				} finally {
+					scheduleSpy.mockRestore();
+				}
+			} finally {
+				ComponentFactory.unregister("logging");
+			}
+		});
+
+		test("cap-reached retry wait never drops below a configured taskInterval larger than the cap", () => {
+			const backgroundTaskService = makeService({ config: { taskInterval: 10_000 } });
+			const serviceInternals = backgroundTaskService as unknown as {
+				capReachedWaitMs(consecutiveCount: number): number;
+			};
+
+			// The uncapped backoff (10_000, 20_000, 40_000...) always exceeds
+			// _MAX_CAP_REACHED_WAIT, so without the floor these would come back as 5000.
+			expect(serviceInternals.capReachedWaitMs(1)).toEqual(10_000);
+			expect(serviceInternals.capReachedWaitMs(3)).toEqual(10_000);
+		});
+
+		test("claims a freed slot within a task interval instead of waiting out its backoff", async () => {
+			// B's hold (4000ms) is deliberately past C's 5th unwaked retry (cumulative 3100ms,
+			// the same schedule T1 asserts) so a coincidental alignment between the two can't
+			// make this pass without the fix; C's next retry after that is at 6300ms.
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService(undefined, 4000);
+
+			await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+
+			let slotFreedAt: number | undefined;
+			let cWorkerAt: number | undefined;
+			for (let i = 0; i < 900; i++) {
+				if (!slotFreedAt && Object.keys(serviceInternals._workers).length < 2) {
+					slotFreedAt = Date.now();
+				}
+				if (!cWorkerAt && serviceInternals._taskHandlers.C.workers.length >= 1) {
+					cWorkerAt = Date.now();
+				}
+				if (slotFreedAt && cWorkerAt) {
+					break;
+				}
+				await new Promise(resolve => setTimeout(resolve, 10));
+			}
+			if (!slotFreedAt || !cWorkerAt) {
+				throw new Error("Timeout waiting for B's slot to free and C to get a worker");
+			}
+
+			// One to five taskIntervals: robust to runner jitter, but nowhere near the
+			// multi-second backoff C would otherwise still be waiting out.
+			expect(cWorkerAt - slotFreedAt).toBeLessThan(500);
+		});
+
+		test("does not arm a retry for a starved type while stopping", async () => {
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService();
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await waitForFilteredSpyCallCount(scheduleSpy, "C", 1);
+				const callsBeforeStop = scheduleSpy.mock.calls.filter(call => call[0] === "C").length;
+
+				// stop() clears every handler's own timer regardless, including C's, so that
+				// alone would pass even without the guard; what the guard actually prevents is
+				// A and B's own cleanup (which stop() also triggers) waking C back up, which
+				// would show up as an extra call for C here.
+				await backgroundTaskService.stop();
+
+				const callsAfterStop = scheduleSpy.mock.calls.filter(call => call[0] === "C").length;
+				expect(callsAfterStop).toEqual(callsBeforeStop);
+				expect(serviceInternals._taskHandlers.C.waitTimerId).toBeUndefined();
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
+
+		test("backs off again when it loses the race for a freed slot", async () => {
+			// B holds its slot only briefly, so the race happens on C and D's first or second
+			// cap-reached check, before their own backoff has grown large enough to make the
+			// loser's next wait slow to observe.
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService(undefined, 350);
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				// C and D keep whichever worker they win (idleShutdownTimeout: -1): once one
+				// wins, its instant task finishing does not free the slot again and start a
+				// second race, so there is exactly one winner and one loser to inspect.
+				await backgroundTaskService.registerHandler(
+					"D",
+					`file://${path.join(__dirname, "testModule.js")}`,
+					"testMethod",
+					undefined,
+					{ idleShutdownTimeout: -1 }
+				);
+				await backgroundTaskService.unregisterHandler("C");
+				await backgroundTaskService.registerHandler(
+					"C",
+					`file://${path.join(__dirname, "testModule.js")}`,
+					"testMethod",
+					undefined,
+					{ idleShutdownTimeout: -1 }
+				);
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await backgroundTaskService.create("D", { counter: 0 }, { retainFor: 10_000 });
+
+				let loser: "C" | "D" | undefined;
+				for (let i = 0; i < 400; i++) {
+					const cWon = serviceInternals._taskHandlers.C.workers.length >= 1;
+					const dWon = serviceInternals._taskHandlers.D.workers.length >= 1;
+					if (cWon || dWon) {
+						loser = cWon ? "D" : "C";
+						break;
+					}
+					await new Promise(resolve => setTimeout(resolve, 10));
+				}
+				if (!loser) {
+					throw new Error("Timeout waiting for either C or D to get a worker");
+				}
+				const loserCountAtRelease = serviceInternals._taskHandlers[loser].capReachedCount ?? 0;
+
+				// The loser keeps being woken and keeps losing (the winner holds its slot for
+				// the rest of the test), so its count must keep climbing rather than reset.
+				let loserCountAfterAnotherLoss: number | undefined;
+				for (let i = 0; i < 200; i++) {
+					const count = serviceInternals._taskHandlers[loser].capReachedCount;
+					if (count !== undefined && count > loserCountAtRelease) {
+						loserCountAfterAnotherLoss = count;
+						break;
+					}
+					await new Promise(resolve => setTimeout(resolve, 10));
+				}
+				if (loserCountAfterAnotherLoss === undefined) {
+					throw new Error(`Timeout waiting for "${loser}" to back off again after losing`);
+				}
+
+				const loserCalls = scheduleSpy.mock.calls.filter(call => call[0] === loser);
+				const lastNumericDelay = loserCalls
+					.map(call => call[1])
+					.reverse()
+					.find(delay => Is.number(delay));
+				expect(lastNumericDelay).toBeDefined();
+				expect(loserCountAfterAnotherLoss).toBeGreaterThan(loserCountAtRelease);
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
 	});
 
 	describe("state-change callback context", () => {

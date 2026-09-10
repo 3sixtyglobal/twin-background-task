@@ -87,6 +87,18 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
 
 	/**
+	 * Minimum time in milliseconds between maxSystemWorkerCountReached warnings for one type.
+	 * @internal
+	 */
+	private static readonly _CAP_REACHED_LOG_INTERVAL: number = 60000;
+
+	/**
+	 * Cap on the retry wait for a type blocked by the system worker cap.
+	 * @internal
+	 */
+	private static readonly _MAX_CAP_REACHED_WAIT: number = 5000;
+
+	/**
 	 * The timeout in milliseconds for a health-check task to complete.
 	 * @internal
 	 */
@@ -835,21 +847,35 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 									// any more workers right now, we log a warning and schedule
 									// a retry for later
 									if (activeWorkerCount === 0) {
-										// We have reached the system worker limit, so we cannot create
-										// any more workers right now, log a warning
-										await this._logging?.log({
-											level: "warn",
-											source: BackgroundTaskService.CLASS_NAME,
-											ts: Date.now(),
-											message: "maxSystemWorkerCountReached",
-											data: {
-												maxSystemWorkerCount: this._maxSystemWorkerCount,
-												type: taskType
-											}
-										});
+										// Rate-limited to once per _CAP_REACHED_LOG_INTERVAL so a sustained
+										// shortage doesn't flood the log every taskInterval.
+										taskHandler.capReachedCount = (taskHandler.capReachedCount ?? 0) + 1;
 
-										// Schedule a retry for later
-										this.scheduleNextTaskProcessing(taskType);
+										const capReachedNow = Date.now();
+										if (
+											capReachedNow - (taskHandler.capReachedLastLoggedMs ?? 0) >=
+											BackgroundTaskService._CAP_REACHED_LOG_INTERVAL
+										) {
+											taskHandler.capReachedLastLoggedMs = capReachedNow;
+											await this._logging?.log({
+												level: "warn",
+												source: BackgroundTaskService.CLASS_NAME,
+												ts: capReachedNow,
+												message: "maxSystemWorkerCountReached",
+												data: {
+													maxSystemWorkerCount: this._maxSystemWorkerCount,
+													type: taskType,
+													count: taskHandler.capReachedCount
+												}
+											});
+										}
+
+										// Backs off so a type with no worker at all isn't retried every
+										// single taskInterval.
+										this.scheduleNextTaskProcessing(
+											taskType,
+											this.capReachedWaitMs(taskHandler.capReachedCount)
+										);
 									} else {
 										// There is no capacity to process this task right now, but the
 										// task type has active workers, so we just wait for the next processing
@@ -888,7 +914,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 							error: BaseError.fromError(err)
 						});
 					} finally {
-						if (!dispatched) {
+						if (dispatched) {
+							// Backoff restarts next time it's blocked; capReachedLastLoggedMs is
+							// left alone so the warning stays rate-limited across episodes too.
+							taskHandler.capReachedCount = undefined;
+						} else {
 							// Claimed above but not dispatched (no worker capacity or dispatch threw);
 							// release the claim so the next processing cycle can pick the task up again.
 							this._inFlightTaskIds.get(taskType)?.delete(nextTask.id);
@@ -1074,7 +1104,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	}
 
 	/**
-	 * Cleanup a worker from the pool.
+	 * Cleanup a worker from the pool, and give any task type backed off by the system worker cap
+	 * an immediate retry now a slot is free.
 	 * @param taskHandler The background task handler.
 	 * @param thread The background task thread.
 	 * @returns A promise that resolves when the worker has been terminated and removed from the pool.
@@ -1097,7 +1128,25 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			}
 			// Remove the worker from the worker list
 			delete this._workers[thread.workerId];
+			this.wakeStarvedTaskTypes(taskHandler);
 			await thread.module?.terminate();
+		}
+	}
+
+	/**
+	 * Give every task type backed off by the system worker cap an immediate retry, as a slot has
+	 * just been released; the backoff stays as the safety net for the ones that lose the race.
+	 * @param releasedFrom The handler whose worker was released, which reschedules itself.
+	 * @internal
+	 */
+	private wakeStarvedTaskTypes(releasedFrom?: IBackgroundTaskHandler): void {
+		if (!this._started) {
+			return;
+		}
+		for (const [taskType, handler] of Object.entries(this._taskHandlers)) {
+			if (handler !== releasedFrom && !Is.undefined(handler.capReachedCount)) {
+				this.scheduleNextTaskProcessing(taskType);
+			}
 		}
 	}
 
@@ -1250,9 +1299,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	/**
 	 * Schedule the next processing cycle for a task type.
 	 * @param taskType The type of the task to schedule.
+	 * @param delayMs The delay in milliseconds before the next cycle, defaults to the configured
+	 * taskInterval.
 	 * @internal
 	 */
-	private scheduleNextTaskProcessing(taskType: string): void {
+	private scheduleNextTaskProcessing(taskType: string, delayMs?: number): void {
 		const taskHandler = this._taskHandlers[taskType];
 		if (Is.empty(taskHandler)) {
 			return;
@@ -1263,8 +1314,24 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		}
 		taskHandler.waitTimerId = setTimeout(
 			async () => this.processTaskType(taskType),
-			this._taskInterval
+			delayMs ?? this._taskInterval
 		);
+	}
+
+	/**
+	 * The retry wait for a type blocked by the system worker cap, doubling per consecutive block
+	 * and clamped between taskInterval and _MAX_CAP_REACHED_WAIT.
+	 * @param consecutiveCount How many consecutive times this type has been blocked.
+	 * @returns The delay in milliseconds.
+	 * @internal
+	 */
+	private capReachedWaitMs(consecutiveCount: number): number {
+		const multiplier = 2 ** Math.max(consecutiveCount - 1, 0);
+		const backedOff = Math.min(
+			this._taskInterval * multiplier,
+			BackgroundTaskService._MAX_CAP_REACHED_WAIT
+		);
+		return Math.max(backedOff, this._taskInterval);
 	}
 
 	/**

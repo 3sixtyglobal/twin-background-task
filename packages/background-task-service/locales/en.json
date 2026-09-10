@@ -20,7 +20,7 @@
 	},
 	"warn": {
 		"backgroundTaskService": {
-			"maxSystemWorkerCountReached": "The maximum system worker count of {maxSystemWorkerCount} has been reached, can not create any more worker for task type \"{type}\""
+			"maxSystemWorkerCountReached": "The maximum system worker count of {maxSystemWorkerCount} has been reached, can not create any more worker for task type \"{type}\" (consecutive blocks: {count})"
 		}
 	}
 }
