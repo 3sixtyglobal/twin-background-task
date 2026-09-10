@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.3-next.2](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.1...background-task-service-v0.9.3-next.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* back off and rate-limit the worker-cap retry warning ([#115](https://github.com/iotaledger/twin-background-task/issues/115)) ([1c9bf24](https://github.com/iotaledger/twin-background-task/commit/1c9bf24d6b9f5ec66473d7916b4be1cce0d18183))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.3-next.1 to 0.9.3-next.2
+
 ## [0.9.3-next.1](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.0...background-task-service-v0.9.3-next.1) (2026-09-08)
 
 
