@@ -90,6 +90,12 @@ The shutdown method to call on the module when a worker is stopped.
 
 Callback to provide additional parameters to spread when calling the shutdownMethod.
 
+###### executionTimeout?
+
+`number`
+
+Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
+
 #### Returns
 
 `Promise`\<`void`\>
