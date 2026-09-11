@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.3-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.2...background-task-service-v0.9.3-next.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* requeue torn down tasks ([#118](https://github.com/iotaledger/twin-background-task/issues/118)) ([adbee87](https://github.com/iotaledger/twin-background-task/commit/adbee87d57797cc55516c85be1e5b83f59ccaf5d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.3-next.2 to 0.9.3-next.3
+
 ## [0.9.3-next.2](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.1...background-task-service-v0.9.3-next.2) (2026-09-10)
 
 
