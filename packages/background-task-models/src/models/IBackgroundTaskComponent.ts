@@ -22,6 +22,7 @@ export interface IBackgroundTaskComponent extends IComponent {
 	 * @param options.initialiseMethodParams Callback to provide additional parameters to spread when calling the initialiseMethod.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
 	 * @param options.shutdownMethodParams Callback to provide additional parameters to spread when calling the shutdownMethod.
+	 * @param options.executionTimeout Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
 	 * @returns A promise that resolves when the handler is registered
 	 */
 	registerHandler<T, U>(
@@ -36,6 +37,7 @@ export interface IBackgroundTaskComponent extends IComponent {
 			initialiseMethodParams?: () => Promise<unknown[]>;
 			shutdownMethod?: string;
 			shutdownMethodParams?: () => Promise<unknown[]>;
+			executionTimeout?: number;
 		}
 	): Promise<void>;
 

@@ -31,6 +31,13 @@ export interface IBackgroundTaskServiceConfig {
 	workerShutdownTimeout?: number;
 
 	/**
+	 * The maximum dispatches of an attempt before the task is failed as interrupted, defaults to 3,
+	 * set to -1 for no limit. Only dispatches that ended without a result count, and the count is
+	 * per process, so a restart resumes the task with a fresh budget.
+	 */
+	maxDispatchCount?: number;
+
+	/**
 	 * The url of the handler to use for health checks. If not provided, the default health check handler will be used.
 	 */
 	overrideHealthCheckHandler?: string;
