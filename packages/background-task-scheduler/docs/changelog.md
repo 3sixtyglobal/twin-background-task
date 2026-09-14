@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.3-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.3-next.3...background-task-scheduler-v0.9.3-next.4) (2026-09-14)
+
+
+### Miscellaneous Chores
+
+* **background-task-scheduler:** Synchronize repo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.3-next.3 to 0.9.3-next.4
+
 ## [0.9.3-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.9.3-next.2...background-task-scheduler-v0.9.3-next.3) (2026-09-11)
 
 

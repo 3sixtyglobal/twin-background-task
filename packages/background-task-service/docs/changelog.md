@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.9.3-next.4](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.3...background-task-service-v0.9.3-next.4) (2026-09-14)
+
+
+### Features
+
+* cleanup retained only in foreground ([53ba97d](https://github.com/iotaledger/twin-background-task/commit/53ba97d3955fd1aff1f9b7c27f9c13d3a54afbf7))
+* cleanup retained only in foreground ([b456af3](https://github.com/iotaledger/twin-background-task/commit/b456af3b5d56f7b6ce2563314b36a181938b2c50))
+
+
+### Bug Fixes
+
+* improve teardown state ([#122](https://github.com/iotaledger/twin-background-task/issues/122)) ([4b7f209](https://github.com/iotaledger/twin-background-task/commit/4b7f20930de91bfe2965bb33ba76037cc0a842a0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.9.3-next.3 to 0.9.3-next.4
+
 ## [0.9.3-next.3](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.9.3-next.2...background-task-service-v0.9.3-next.3) (2026-09-11)
 
 
