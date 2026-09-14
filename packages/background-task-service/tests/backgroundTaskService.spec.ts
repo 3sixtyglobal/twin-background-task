@@ -2074,8 +2074,8 @@ describe("BackgroundTaskService", () => {
 		const testModuleUrl = (): string => `file://${path.join(__dirname, "testModule.js")}`;
 
 		test("backs the next process time off at dispatch so an interrupted task stops starving pending work", async () => {
-			// An interrupted task keeps its processing status so it can be resumed, and previously
-			// kept its dateNextProcess too, sorting ahead of every pending task on every cycle.
+			// An interrupted task goes back to pending so it can be resumed, and previously kept
+			// its dateNextProcess too, sorting ahead of every pending task on every cycle.
 			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
 
 			const registerStarvationHandler = async (): Promise<void> =>
@@ -2104,7 +2104,7 @@ describe("BackgroundTaskService", () => {
 			await waitForStatus("success", 1);
 
 			const store = await backgroundTaskEntityStorageConnector.getStore();
-			expect(store[0].status).toEqual(TaskStatus.Processing);
+			expect(store[0].status).toEqual(TaskStatus.Pending);
 			expect(store[1].status).toEqual(TaskStatus.Success);
 		});
 
@@ -2183,7 +2183,7 @@ describe("BackgroundTaskService", () => {
 				await backgroundTaskService.unregisterHandler("unbounded-type");
 				await registerUnboundedHandler();
 				await waitForCondition(
-					() => dispatches.length >= round + 2,
+					() => dispatches.filter(status => status === TaskStatus.Processing).length >= round + 2,
 					"Timeout waiting for re-dispatch"
 				);
 			}
@@ -2459,6 +2459,288 @@ describe("BackgroundTaskService", () => {
 				_inFlightTaskIds: Map<string, Set<string>>;
 			};
 			expect(serviceInternals._inFlightTaskIds.get("held-claim-type")?.size).toEqual(1);
+		});
+	});
+
+	describe("interrupted task status (#121)", () => {
+		const testModuleUrl = (): string => `file://${path.join(__dirname, "testModule.js")}`;
+
+		test("returns a task to pending when its worker is torn down mid-task", async () => {
+			// A row left in processing with no worker on it makes the status meaningless for
+			// anything counting in-flight work.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			const transitions: string[] = [];
+
+			await backgroundTaskService.registerHandler(
+				"torn-down-type",
+				testModuleUrl(),
+				"testMethodHang",
+				async task => {
+					transitions.push(task.status);
+				},
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("torn-down-type", {}, { retainFor: 10_000 });
+			await waitForStatus(TaskStatus.Processing);
+
+			// Tear the worker down mid-task, as a stall detector, handler swap or pod stop would.
+			await backgroundTaskService.unregisterHandler("torn-down-type");
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Pending);
+			// The backoff still decides where it sorts, so it does not starve pending work.
+			expect(new Date(store[0].dateNextProcess ?? 0).getTime()).toBeGreaterThan(Date.now());
+			expect(transitions).toEqual([TaskStatus.Processing, TaskStatus.Pending]);
+		});
+
+		test("allows a task interrupted by a tear-down to be cancelled while it waits", async () => {
+			// cancel() only acts on pending rows, so an interrupted task was uncancellable.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			await backgroundTaskService.registerHandler(
+				"cancel-interrupted-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const taskId = await backgroundTaskService.create(
+				"cancel-interrupted-type",
+				{},
+				{ retainFor: 10_000 }
+			);
+			await waitForStatus(TaskStatus.Processing);
+
+			await backgroundTaskService.unregisterHandler("cancel-interrupted-type");
+			await backgroundTaskService.cancel(taskId);
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Cancelled);
+			expect(store[0].dateCancelled).toBeDefined();
+		});
+
+		test("does not resurrect a task removed while its worker held it", async () => {
+			// The worker's copy of the row is stale once the task is removed, so writing it back
+			// would recreate the row as pending.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			await backgroundTaskService.registerHandler(
+				"removed-while-held-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const taskId = await backgroundTaskService.create(
+				"removed-while-held-type",
+				{},
+				{ retainFor: 10_000 }
+			);
+			await waitForStatus(TaskStatus.Processing);
+
+			await backgroundTaskService.remove(taskId);
+			await backgroundTaskService.unregisterHandler("removed-while-held-type");
+
+			expect(await backgroundTaskEntityStorageConnector.getStore()).toHaveLength(0);
+		});
+
+		test("returns tasks left in processing by a previous run to pending at startup", async () => {
+			// Nothing gets to run when a process is killed, so the rows it owned stay in processing
+			// with no worker anywhere.
+			const stuckTask: BackgroundTask = {
+				id: "cc000000000000000000000000000000",
+				type: "killed-process-type",
+				threadId: "main",
+				status: TaskStatus.Processing,
+				payload: { counter: 5 },
+				retainFor: 10_000,
+				dateCreated: new Date(Date.now()).toISOString(),
+				dateModified: new Date(Date.now()).toISOString(),
+				dateNextProcess: new Date(Date.now() + 60_000).toISOString()
+			};
+			await backgroundTaskEntityStorageConnector.set(stuckTask);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.start();
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Pending);
+			// The backoff it was dispatched with still decides where it sorts.
+			expect(store[0].dateNextProcess).toEqual(stuckTask.dateNextProcess);
+		});
+
+		test("runs the shutdown method on a stalled worker before terminating it", async () => {
+			// A stalled thread is force-terminated, so without this it never releases its resources.
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"stalled-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{
+					executionTimeout: 300,
+					idleShutdownTimeout: -1,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("stalled-type", {}, { retainFor: 10_000 });
+
+			await waitForStatus(TaskStatus.Failed);
+			await waitForCondition(
+				() => shutdownOrder.includes("terminate"),
+				"Timeout waiting for the worker to be terminated"
+			);
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
+		});
+
+		test("asks a stalled worker to shut down only once", async () => {
+			// The idle shutdown and the forced tear-down both want the worker gone, but the
+			// shutdown method should not run twice.
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"stalled-once-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{
+					executionTimeout: 300,
+					idleShutdownTimeout: 0,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("stalled-once-type", {}, { retainFor: 10_000 });
+
+			await waitForStatus(TaskStatus.Failed);
+			await waitForCondition(
+				() => shutdownOrder.includes("terminate"),
+				"Timeout waiting for the worker to be terminated"
+			);
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
+		});
+
+		test("runs the shutdown method when a handler is unregistered", async () => {
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"unregister-shutdown-type",
+				testModuleUrl(),
+				"testMethod",
+				undefined,
+				{
+					idleShutdownTimeout: -1,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create(
+				"unregister-shutdown-type",
+				{ counter: 0 },
+				{ retainFor: 10_000 }
+			);
+
+			await waitForStatus(TaskStatus.Success);
+			expect(shutdownOrder).toEqual([]);
+
+			await backgroundTaskService.unregisterHandler("unregister-shutdown-type");
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
 		});
 	});
 });
