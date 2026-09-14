@@ -31,4 +31,9 @@ export interface IBackgroundTaskWorker {
 	 * The timer ID for execution timeout.
 	 */
 	executionTimerId?: ReturnType<typeof setTimeout>;
+
+	/**
+	 * The worker has been asked to run its shutdown method, so it should not be asked again.
+	 */
+	shuttingDown?: boolean;
 }
