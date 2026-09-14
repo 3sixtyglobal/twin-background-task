@@ -1940,7 +1940,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		if (!isMainThread) {
 			return;
 		}
-		
+
 		try {
 			const now = Date.now();
 
