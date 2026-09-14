@@ -1815,6 +1815,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	 * @internal
 	 */
 	private async cleanupRetained(): Promise<void> {
+		if (!isMainThread) {
+			return;
+		}
+		
 		try {
 			const now = Date.now();
 
