@@ -6,7 +6,7 @@ import type { IHealth } from "@twin.org/api-models";
 import type { IBackgroundTask } from "@twin.org/background-task-models";
 import { TaskStatus } from "@twin.org/background-task-models";
 import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
-import { Converter, Factory, Is, RandomHelper } from "@twin.org/core";
+import { ComponentFactory, Converter, Factory, Is, RandomHelper } from "@twin.org/core";
 import {
 	EntitySchemaFactory,
 	EntitySchemaHelper,
@@ -16,6 +16,7 @@ import {
 } from "@twin.org/entity";
 import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
 import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
+import type { ILogEntry } from "@twin.org/logging-models";
 import { ModuleHelper } from "@twin.org/modules";
 import { nameof } from "@twin.org/nameof";
 import { BackgroundTaskService } from "../src/backgroundTaskService.js";
@@ -65,6 +66,79 @@ async function waitForStatus(status: string, itemIndex: number = 0): Promise<voi
 }
 
 /**
+ * Wait for the task store to reach a length.
+ * @param length The store length to wait for.
+ */
+async function waitForStoreLength(length: number): Promise<void> {
+	for (let i = 0; i < 50; i++) {
+		if ((await backgroundTaskEntityStorageConnector.getStore()).length === length) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error("Timeout waiting for store length");
+}
+
+/**
+ * Read the in-memory dispatch count the service holds for a task.
+ * @param service The service holding the counts.
+ * @param taskId The id of the task, defaults to the first stored task.
+ * @returns The dispatch count, or 0 when none is held.
+ */
+async function dispatchCountFor(service: BackgroundTaskService, taskId?: string): Promise<number> {
+	const id = taskId ?? (await backgroundTaskEntityStorageConnector.getStore())[0]?.id;
+	return dispatchCounts(service).get(id)?.count ?? 0;
+}
+
+/**
+ * Read the in-memory dispatch count map the service holds.
+ * @param service The service holding the counts.
+ * @returns The dispatch count map.
+ */
+function dispatchCounts(
+	service: BackgroundTaskService
+): Map<string, { count: number; ts: number }> {
+	return (
+		service as unknown as {
+			_dispatchCounts: Map<string, { count: number; ts: number }>;
+		}
+	)._dispatchCounts;
+}
+
+/**
+ * Wait for a condition to become true.
+ * @param predicate The condition to wait for.
+ * @param message The error to throw on timeout.
+ */
+async function waitForCondition(predicate: () => boolean, message: string): Promise<void> {
+	for (let i = 0; i < 50; i++) {
+		if (predicate()) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error(message);
+}
+
+/**
+ * Wait for a task to reach a dispatch count.
+ * @param service The service holding the counts.
+ * @param dispatchCount The dispatch count to wait for.
+ */
+async function waitForDispatchCount(
+	service: BackgroundTaskService,
+	dispatchCount: number
+): Promise<void> {
+	for (let i = 0; i < 50; i++) {
+		if ((await dispatchCountFor(service)) >= dispatchCount) {
+			return;
+		}
+		await new Promise(resolve => setTimeout(resolve, 100));
+	}
+	throw new Error("Timeout waiting for dispatch count");
+}
+
+/**
  * Wait for error.
  * @param itemIndex The item index to wait for.
  */
@@ -96,6 +170,10 @@ async function waitForCallbackObservation(
 
 interface ISpyCallCounter {
 	mock: { calls: unknown[] };
+}
+
+interface ISpyCallArgsCounter {
+	mock: { calls: unknown[][] };
 }
 
 /**
@@ -1198,6 +1276,320 @@ describe("BackgroundTaskService", () => {
 		scheduleSpy.mockRestore();
 	});
 
+	describe("worker cap retry", () => {
+		/**
+		 * Wait for at least the given number of scheduleNextTaskProcessing calls for one type.
+		 * @param spy The spy on scheduleNextTaskProcessing.
+		 * @param taskType The task type to filter calls for.
+		 * @param callCount The expected call count for that type.
+		 */
+		async function waitForFilteredSpyCallCount(
+			spy: ISpyCallArgsCounter,
+			taskType: string,
+			callCount: number
+		): Promise<void> {
+			for (let i = 0; i < 50; i++) {
+				if (spy.mock.calls.filter(call => call[0] === taskType).length >= callCount) {
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			throw new Error(
+				`Timeout waiting for ${callCount} scheduleNextTaskProcessing calls for "${taskType}"`
+			);
+		}
+
+		/**
+		 * Wait for at least the given number of system workers to exist.
+		 * @param workers The service's internal worker map.
+		 * @param count The expected worker count.
+		 */
+		async function waitForWorkerCount(
+			workers: { [workerId: string]: unknown },
+			count: number
+		): Promise<void> {
+			for (let i = 0; i < 50; i++) {
+				if (Object.keys(workers).length >= count) {
+					return;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			throw new Error(`Timeout waiting for ${count} workers to be created`);
+		}
+
+		/**
+		 * Build a service with both system worker slots held (one permanently by type A, one by
+		 * type B) and a third type C registered but starved for the rest of the test.
+		 * @param loggingComponentType The logging component type to pass to the service, if any.
+		 * @param bHoldMs How long type B's task runs before its slot frees.
+		 * @returns The service and its internals cast for scheduleNextTaskProcessing spying.
+		 */
+		async function makeStarvedService(
+			loggingComponentType?: string,
+			bHoldMs = 3000
+		): Promise<{
+			backgroundTaskService: BackgroundTaskService;
+			serviceInternals: {
+				_workers: { [workerId: string]: unknown };
+				_taskHandlers: {
+					[taskType: string]: {
+						capReachedCount?: number;
+						capReachedLastLoggedMs?: number;
+						waitTimerId?: unknown;
+						workers: unknown[];
+					};
+				};
+				scheduleNextTaskProcessing(taskType: string, delayMs?: number): void;
+			};
+		}> {
+			const backgroundTaskService = makeService({
+				loggingComponentType,
+				config: { maxSystemWorkerCount: 2, taskInterval: 100 }
+			});
+			const serviceInternals = backgroundTaskService as unknown as {
+				_workers: { [workerId: string]: unknown };
+				_taskHandlers: {
+					[taskType: string]: {
+						capReachedCount?: number;
+						capReachedLastLoggedMs?: number;
+						waitTimerId?: unknown;
+						workers: unknown[];
+					};
+				};
+				scheduleNextTaskProcessing(taskType: string, delayMs?: number): void;
+			};
+
+			await backgroundTaskService.registerHandler(
+				"A",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod",
+				undefined,
+				{ idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("A", { counter: 0 }, { retainFor: 10_000 });
+			await waitForStatus(TaskStatus.Success, 0);
+
+			await backgroundTaskService.registerHandler(
+				"B",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethodConfigurableSlow"
+			);
+			await backgroundTaskService.create("B", { ms: bHoldMs }, { retainFor: 10_000 });
+
+			// Both slots are only actually held once B's worker exists, not merely once its task
+			// is queued; waiting on the count itself avoids guessing how long that takes.
+			await waitForWorkerCount(serviceInternals._workers, 2);
+
+			await backgroundTaskService.registerHandler(
+				"C",
+				`file://${path.join(__dirname, "testModule.js")}`,
+				"testMethod"
+			);
+
+			return { backgroundTaskService, serviceInternals };
+		}
+
+		test("backs off the retry wait after repeated cap-reached retries for the same type", async () => {
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService();
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await waitForFilteredSpyCallCount(scheduleSpy, "C", 4);
+
+				const delays = scheduleSpy.mock.calls
+					.filter(call => call[0] === "C")
+					.slice(0, 4)
+					.map(call => call[1]);
+
+				expect(delays).toEqual([100, 200, 400, 800]);
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
+
+		test("rate-limits the max system worker count warning while a type stays starved", async () => {
+			const logEntries: ILogEntry[] = [];
+			ComponentFactory.register("logging", () => ({
+				className: () => "MockLoggingComponent",
+				log: async (entry: ILogEntry) => {
+					logEntries.push(entry);
+				}
+			}));
+
+			try {
+				const { backgroundTaskService, serviceInternals } = await makeStarvedService("logging");
+				const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+				try {
+					const stalledEntries = (): ILogEntry[] =>
+						logEntries.filter(entry => entry.message === "maxSystemWorkerCountReached");
+
+					await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+					await waitForFilteredSpyCallCount(scheduleSpy, "C", 2);
+
+					expect(stalledEntries()).toHaveLength(1);
+					expect(stalledEntries()[0].data).toMatchObject({
+						type: "C",
+						maxSystemWorkerCount: 2,
+						count: 1
+					});
+
+					// Backdate the last-logged time as if the rate-limit window had already
+					// elapsed, so the next check logs again instead of waiting a real minute;
+					// this is what proves the limit is time-based, not "once per type ever".
+					serviceInternals._taskHandlers.C.capReachedLastLoggedMs = Date.now() - 60_000;
+					await waitForFilteredSpyCallCount(scheduleSpy, "C", 5);
+
+					expect(stalledEntries()).toHaveLength(2);
+					expect((stalledEntries()[1].data as { count: number }).count).toBeGreaterThan(1);
+				} finally {
+					scheduleSpy.mockRestore();
+				}
+			} finally {
+				ComponentFactory.unregister("logging");
+			}
+		});
+
+		test("cap-reached retry wait never drops below a configured taskInterval larger than the cap", () => {
+			const backgroundTaskService = makeService({ config: { taskInterval: 10_000 } });
+			const serviceInternals = backgroundTaskService as unknown as {
+				capReachedWaitMs(consecutiveCount: number): number;
+			};
+
+			// The uncapped backoff (10_000, 20_000, 40_000...) always exceeds
+			// _MAX_CAP_REACHED_WAIT, so without the floor these would come back as 5000.
+			expect(serviceInternals.capReachedWaitMs(1)).toEqual(10_000);
+			expect(serviceInternals.capReachedWaitMs(3)).toEqual(10_000);
+		});
+
+		test("claims a freed slot within a task interval instead of waiting out its backoff", async () => {
+			// B's hold (4000ms) is deliberately past C's 5th unwaked retry (cumulative 3100ms,
+			// the same schedule T1 asserts) so a coincidental alignment between the two can't
+			// make this pass without the fix; C's next retry after that is at 6300ms.
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService(undefined, 4000);
+
+			await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+
+			let slotFreedAt: number | undefined;
+			let cWorkerAt: number | undefined;
+			for (let i = 0; i < 900; i++) {
+				if (!slotFreedAt && Object.keys(serviceInternals._workers).length < 2) {
+					slotFreedAt = Date.now();
+				}
+				if (!cWorkerAt && serviceInternals._taskHandlers.C.workers.length >= 1) {
+					cWorkerAt = Date.now();
+				}
+				if (slotFreedAt && cWorkerAt) {
+					break;
+				}
+				await new Promise(resolve => setTimeout(resolve, 10));
+			}
+			if (!slotFreedAt || !cWorkerAt) {
+				throw new Error("Timeout waiting for B's slot to free and C to get a worker");
+			}
+
+			// One to five taskIntervals: robust to runner jitter, but nowhere near the
+			// multi-second backoff C would otherwise still be waiting out.
+			expect(cWorkerAt - slotFreedAt).toBeLessThan(500);
+		});
+
+		test("does not arm a retry for a starved type while stopping", async () => {
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService();
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await waitForFilteredSpyCallCount(scheduleSpy, "C", 1);
+				const callsBeforeStop = scheduleSpy.mock.calls.filter(call => call[0] === "C").length;
+
+				// stop() clears every handler's own timer regardless, including C's, so that
+				// alone would pass even without the guard; what the guard actually prevents is
+				// A and B's own cleanup (which stop() also triggers) waking C back up, which
+				// would show up as an extra call for C here.
+				await backgroundTaskService.stop();
+
+				const callsAfterStop = scheduleSpy.mock.calls.filter(call => call[0] === "C").length;
+				expect(callsAfterStop).toEqual(callsBeforeStop);
+				expect(serviceInternals._taskHandlers.C.waitTimerId).toBeUndefined();
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
+
+		test("backs off again when it loses the race for a freed slot", async () => {
+			// B holds its slot only briefly, so the race happens on C and D's first or second
+			// cap-reached check, before their own backoff has grown large enough to make the
+			// loser's next wait slow to observe.
+			const { backgroundTaskService, serviceInternals } = await makeStarvedService(undefined, 350);
+			const scheduleSpy = vi.spyOn(serviceInternals, "scheduleNextTaskProcessing");
+
+			try {
+				// C and D keep whichever worker they win (idleShutdownTimeout: -1): once one
+				// wins, its instant task finishing does not free the slot again and start a
+				// second race, so there is exactly one winner and one loser to inspect.
+				await backgroundTaskService.registerHandler(
+					"D",
+					`file://${path.join(__dirname, "testModule.js")}`,
+					"testMethod",
+					undefined,
+					{ idleShutdownTimeout: -1 }
+				);
+				await backgroundTaskService.unregisterHandler("C");
+				await backgroundTaskService.registerHandler(
+					"C",
+					`file://${path.join(__dirname, "testModule.js")}`,
+					"testMethod",
+					undefined,
+					{ idleShutdownTimeout: -1 }
+				);
+				await backgroundTaskService.create("C", { counter: 0 }, { retainFor: 10_000 });
+				await backgroundTaskService.create("D", { counter: 0 }, { retainFor: 10_000 });
+
+				let loser: "C" | "D" | undefined;
+				for (let i = 0; i < 400; i++) {
+					const cWon = serviceInternals._taskHandlers.C.workers.length >= 1;
+					const dWon = serviceInternals._taskHandlers.D.workers.length >= 1;
+					if (cWon || dWon) {
+						loser = cWon ? "D" : "C";
+						break;
+					}
+					await new Promise(resolve => setTimeout(resolve, 10));
+				}
+				if (!loser) {
+					throw new Error("Timeout waiting for either C or D to get a worker");
+				}
+				const loserCountAtRelease = serviceInternals._taskHandlers[loser].capReachedCount ?? 0;
+
+				// The loser keeps being woken and keeps losing (the winner holds its slot for
+				// the rest of the test), so its count must keep climbing rather than reset.
+				let loserCountAfterAnotherLoss: number | undefined;
+				for (let i = 0; i < 200; i++) {
+					const count = serviceInternals._taskHandlers[loser].capReachedCount;
+					if (count !== undefined && count > loserCountAtRelease) {
+						loserCountAfterAnotherLoss = count;
+						break;
+					}
+					await new Promise(resolve => setTimeout(resolve, 10));
+				}
+				if (loserCountAfterAnotherLoss === undefined) {
+					throw new Error(`Timeout waiting for "${loser}" to back off again after losing`);
+				}
+
+				const loserCalls = scheduleSpy.mock.calls.filter(call => call[0] === loser);
+				const lastNumericDelay = loserCalls
+					.map(call => call[1])
+					.reverse()
+					.find(delay => Is.number(delay));
+				expect(lastNumericDelay).toBeDefined();
+				expect(loserCountAfterAnotherLoss).toBeGreaterThan(loserCountAtRelease);
+			} finally {
+				scheduleSpy.mockRestore();
+			}
+		});
+	});
+
 	describe("state-change callback context", () => {
 		const TENANT_A = "tenant-org-a";
 		const TENANT_B = "tenant-org-b";
@@ -1675,6 +2067,680 @@ describe("BackgroundTaskService", () => {
 			await callbackPromise;
 			expect(callbackResult?.[0].status).toEqual("error");
 			expect(callbackResult?.[0].error).toBeDefined();
+		});
+	});
+
+	describe("interrupted and duplicate dispatch (#117)", () => {
+		const testModuleUrl = (): string => `file://${path.join(__dirname, "testModule.js")}`;
+
+		test("backs the next process time off at dispatch so an interrupted task stops starving pending work", async () => {
+			// An interrupted task goes back to pending so it can be resumed, and previously kept
+			// its dateNextProcess too, sorting ahead of every pending task on every cycle.
+			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
+
+			const registerStarvationHandler = async (): Promise<void> =>
+				backgroundTaskService.registerHandler(
+					"starvation-type",
+					testModuleUrl(),
+					"testMethodConfigurableSlow",
+					undefined,
+					{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+				);
+
+			await registerStarvationHandler();
+			await backgroundTaskService.start();
+
+			// Long enough that a resumed first task would hold the only worker for the whole test.
+			await backgroundTaskService.create("starvation-type", { ms: 60_000 }, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+
+			await backgroundTaskService.create("starvation-type", { ms: 10 }, { retainFor: 10_000 });
+
+			// Tear the worker down mid-task, as a probe kill or handler re-registration would.
+			await backgroundTaskService.unregisterHandler("starvation-type");
+			await registerStarvationHandler();
+
+			// The resumed task is backed off, so the pending one sorts first and gets the worker.
+			await waitForStatus("success", 1);
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Pending);
+			expect(store[1].status).toEqual(TaskStatus.Success);
+		});
+
+		test("fails a task as interrupted once its dispatches reach the configured maximum", async () => {
+			// Interrupted attempts carry no error, so retriesRemaining never decrements for them.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 100, maxDispatchCount: 2 }
+			});
+
+			const registerInterruptedHandler = async (): Promise<void> =>
+				backgroundTaskService.registerHandler(
+					"interrupted-type",
+					testModuleUrl(),
+					"testMethodHang",
+					undefined,
+					{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+				);
+
+			await registerInterruptedHandler();
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("interrupted-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+			expect(await dispatchCountFor(backgroundTaskService)).toEqual(1);
+
+			// Interrupt the first dispatch, which frees the claim but leaves the row in processing.
+			await backgroundTaskService.unregisterHandler("interrupted-type");
+			await registerInterruptedHandler();
+
+			// Second and final permitted dispatch.
+			await waitForDispatchCount(backgroundTaskService, 2);
+
+			// Interrupt again; the next cycle has no dispatches left so it fails the task.
+			await backgroundTaskService.unregisterHandler("interrupted-type");
+			await registerInterruptedHandler();
+
+			await waitForStatus("failed", 0);
+
+			const task = (await backgroundTaskEntityStorageConnector.getStore())[0];
+			expect(task.error?.name).toEqual("GeneralError");
+			expect(task.error?.message).toEqual("backgroundTaskService.taskInterrupted");
+			expect(task.error?.properties).toMatchObject({ dispatchCount: 2 });
+			expect(task.dateCompleted).toBeDefined();
+			expect(task.dateNextProcess).toBeUndefined();
+			// The count is dropped once the task is resolved, so it cannot leak.
+			expect(await dispatchCountFor(backgroundTaskService)).toEqual(0);
+		});
+
+		test("resumes an interrupted task indefinitely when the dispatch limit is disabled", async () => {
+			// Handlers relying on a permanently resumed task can opt out of the bound.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 100, maxDispatchCount: -1 }
+			});
+
+			const dispatches: string[] = [];
+
+			const registerUnboundedHandler = async (): Promise<void> =>
+				backgroundTaskService.registerHandler(
+					"unbounded-type",
+					testModuleUrl(),
+					"testMethodHang",
+					async task => {
+						dispatches.push(task.status);
+					},
+					{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+				);
+
+			await registerUnboundedHandler();
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("unbounded-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+
+			// Well past the default maximum of three dispatches.
+			for (let round = 0; round < 4; round++) {
+				await backgroundTaskService.unregisterHandler("unbounded-type");
+				await registerUnboundedHandler();
+				await waitForCondition(
+					() => dispatches.filter(status => status === TaskStatus.Processing).length >= round + 2,
+					"Timeout waiting for re-dispatch"
+				);
+			}
+
+			const task = (await backgroundTaskEntityStorageConnector.getStore())[0];
+			expect(task.status).toEqual(TaskStatus.Processing);
+			expect(dispatches.filter(status => status === TaskStatus.Processing).length).toBeGreaterThan(
+				3
+			);
+			expect(task.error).toBeUndefined();
+			// Nothing is tracked when the bound is off, so the map cannot grow.
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(0);
+		});
+
+		test("clears the dispatch count once an attempt produces a result", async () => {
+			// Only interrupted dispatches should accumulate, otherwise a task that legitimately
+			// retries would be failed as interrupted and the counts would grow for the process life.
+			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
+
+			await backgroundTaskService.registerHandler(
+				"dispatch-count-type",
+				testModuleUrl(),
+				"testMethod",
+				undefined,
+				{ idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create(
+				"dispatch-count-type",
+				{ counter: 0 },
+				{ retainFor: 10_000 }
+			);
+			await waitForStatus("success", 0);
+
+			expect(await dispatchCountFor(backgroundTaskService)).toEqual(0);
+		});
+
+		test("prunes dispatch counts for tasks that are no longer running or awaiting a cycle", async () => {
+			// The delete paths cannot reach a task whose handler was unregistered for good or whose
+			// row was removed elsewhere, so the periodic sweep is what stops the map growing.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 100 }
+			});
+
+			await backgroundTaskService.registerHandler(
+				"prune-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("prune-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(1);
+
+			// Interrupt the task and drop the handler, so nothing will ever re-select it.
+			await backgroundTaskService.unregisterHandler("prune-type");
+
+			const serviceInternals = backgroundTaskService as unknown as {
+				_lastCleanup: number;
+				cleanupRetained(): Promise<void>;
+			};
+
+			// Still in its window, so the entry must survive.
+			serviceInternals._lastCleanup = 0;
+			await serviceInternals.cleanupRetained();
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(1);
+
+			// Age the entry past the reclamation window.
+			const taskId = (await backgroundTaskEntityStorageConnector.getStore())[0].id;
+			const dispatch = dispatchCounts(backgroundTaskService).get(taskId);
+			expect(dispatch).toBeDefined();
+			dispatchCounts(backgroundTaskService).set(taskId, {
+				count: dispatch?.count ?? 1,
+				ts: Date.now() - 600_000
+			});
+
+			serviceInternals._lastCleanup = 0;
+			await serviceInternals.cleanupRetained();
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(0);
+		});
+
+		test("keeps the dispatch count of a task that is still running", async () => {
+			// A long task can outlive the reclamation window, but dropping its count while it is in
+			// flight would hand it a fresh budget every sweep.
+			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
+
+			await backgroundTaskService.registerHandler(
+				"long-running-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("long-running-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+
+			const taskId = (await backgroundTaskEntityStorageConnector.getStore())[0].id;
+			dispatchCounts(backgroundTaskService).set(taskId, { count: 1, ts: Date.now() - 600_000 });
+
+			const serviceInternals = backgroundTaskService as unknown as {
+				_lastCleanup: number;
+				cleanupRetained(): Promise<void>;
+			};
+			serviceInternals._lastCleanup = 0;
+			await serviceInternals.cleanupRetained();
+
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(1);
+		});
+
+		test("clears every dispatch count when the service is stopped", async () => {
+			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
+
+			await backgroundTaskService.registerHandler(
+				"stop-clears-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("stop-clears-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(1);
+
+			await backgroundTaskService.stop();
+
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(0);
+		});
+
+		test("drops the dispatch count when a task is removed or cancelled", async () => {
+			const backgroundTaskService = makeService({ config: { taskInterval: 50 } });
+
+			await backgroundTaskService.registerHandler(
+				"discard-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const taskUrn = await backgroundTaskService.create("discard-type", {}, { retainFor: 10_000 });
+			await waitForStatus("processing", 0);
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(1);
+
+			await backgroundTaskService.remove(taskUrn);
+
+			expect(dispatchCounts(backgroundTaskService).size).toEqual(0);
+		});
+
+		test("does not dispatch a task whose row is no longer current when the query returns", async () => {
+			// A read starting while a task runs can return after it completed, was removed by
+			// retention and released its claim, so the claim check passes for a task already done.
+			// Re-reading the row is what stops the dispatch write resurrecting it and running again.
+			// The short retry interval keeps the dispatch backoff from masking the stale row.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 100 }
+			});
+
+			const transitions: string[] = [];
+			let staleRow: BackgroundTask | undefined;
+
+			await backgroundTaskService.registerHandler(
+				"stale-read-type",
+				testModuleUrl(),
+				"testMethod",
+				async task => {
+					transitions.push(task.status);
+				},
+				{ idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			// Capture the row exactly as the selection query would have seen it mid-run.
+			const originalSet = backgroundTaskEntityStorageConnector.set.bind(
+				backgroundTaskEntityStorageConnector
+			);
+			const setSpy = vi
+				.spyOn(backgroundTaskEntityStorageConnector, "set")
+				.mockImplementation(async (taskEntity: BackgroundTask) => {
+					if (taskEntity.status === TaskStatus.Processing) {
+						staleRow = structuredClone(taskEntity);
+					}
+					return originalSet(taskEntity);
+				});
+
+			// retainFor defaults to 0, so the row is removed as soon as the task completes.
+			await backgroundTaskService.create("stale-read-type", { counter: 0 });
+			await waitForStoreLength(0);
+			setSpy.mockRestore();
+
+			expect(staleRow).toBeDefined();
+			expect(transitions.filter(status => status === TaskStatus.Processing)).toHaveLength(1);
+
+			// Let the backoff on the captured row expire so it reads as due for processing.
+			await new Promise(resolve => setTimeout(resolve, 200));
+
+			// Hand the next selection query the row as it was before the task completed.
+			vi.spyOn(backgroundTaskEntityStorageConnector, "query").mockResolvedValueOnce({
+				entities: [staleRow as BackgroundTask]
+			});
+
+			const serviceInternals = backgroundTaskService as unknown as {
+				processTaskType(taskType: string): Promise<void>;
+			};
+			await serviceInternals.processTaskType("stale-read-type");
+			await new Promise(resolve => setTimeout(resolve, 300));
+
+			// The task must not have run again, and the removed row must not have been recreated.
+			expect(transitions.filter(status => status === TaskStatus.Processing)).toHaveLength(1);
+			expect(await backgroundTaskEntityStorageConnector.getStore()).toHaveLength(0);
+		});
+
+		test("holds the in-flight claim when finalisation fails so the task is not run twice", async () => {
+			// A finalisation write that throws leaves the row in processing despite the task running,
+			// so releasing the claim would let the next cycle execute it again.
+			const logEntries: ILogEntry[] = [];
+			ComponentFactory.register("logging", () => ({
+				className: () => "MockLoggingComponent",
+				log: async (entry: ILogEntry) => {
+					logEntries.push(entry);
+				}
+			}));
+
+			// The short retry interval expires inside the test window, so a released claim would
+			// really produce a second dispatch.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 100 },
+				loggingComponentType: "logging"
+			});
+
+			const transitions: string[] = [];
+
+			await backgroundTaskService.registerHandler(
+				"held-claim-type",
+				testModuleUrl(),
+				"testMethod",
+				async task => {
+					transitions.push(task.status);
+				},
+				{ idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const originalSet = backgroundTaskEntityStorageConnector.set.bind(
+				backgroundTaskEntityStorageConnector
+			);
+			vi.spyOn(backgroundTaskEntityStorageConnector, "set").mockImplementation(
+				async (taskEntity: BackgroundTask) => {
+					if (taskEntity.status === TaskStatus.Success) {
+						throw new Error("finalisation storage failed");
+					}
+					return originalSet(taskEntity);
+				}
+			);
+
+			await backgroundTaskService.create("held-claim-type", { counter: 0 }, { retainFor: 10_000 });
+
+			// Well past the retry interval, so a re-dispatch would have happened by now.
+			await new Promise(resolve => setTimeout(resolve, 1000));
+
+			expect(transitions.filter(status => status === TaskStatus.Processing)).toHaveLength(1);
+			expect(logEntries.filter(entry => entry.message === "taskClaimRetained")).toHaveLength(1);
+
+			const serviceInternals = backgroundTaskService as unknown as {
+				_inFlightTaskIds: Map<string, Set<string>>;
+			};
+			expect(serviceInternals._inFlightTaskIds.get("held-claim-type")?.size).toEqual(1);
+		});
+	});
+
+	describe("interrupted task status (#121)", () => {
+		const testModuleUrl = (): string => `file://${path.join(__dirname, "testModule.js")}`;
+
+		test("returns a task to pending when its worker is torn down mid-task", async () => {
+			// A row left in processing with no worker on it makes the status meaningless for
+			// anything counting in-flight work.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			const transitions: string[] = [];
+
+			await backgroundTaskService.registerHandler(
+				"torn-down-type",
+				testModuleUrl(),
+				"testMethodHang",
+				async task => {
+					transitions.push(task.status);
+				},
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			await backgroundTaskService.create("torn-down-type", {}, { retainFor: 10_000 });
+			await waitForStatus(TaskStatus.Processing);
+
+			// Tear the worker down mid-task, as a stall detector, handler swap or pod stop would.
+			await backgroundTaskService.unregisterHandler("torn-down-type");
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Pending);
+			// The backoff still decides where it sorts, so it does not starve pending work.
+			expect(new Date(store[0].dateNextProcess ?? 0).getTime()).toBeGreaterThan(Date.now());
+			expect(transitions).toEqual([TaskStatus.Processing, TaskStatus.Pending]);
+		});
+
+		test("allows a task interrupted by a tear-down to be cancelled while it waits", async () => {
+			// cancel() only acts on pending rows, so an interrupted task was uncancellable.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			await backgroundTaskService.registerHandler(
+				"cancel-interrupted-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const taskId = await backgroundTaskService.create(
+				"cancel-interrupted-type",
+				{},
+				{ retainFor: 10_000 }
+			);
+			await waitForStatus(TaskStatus.Processing);
+
+			await backgroundTaskService.unregisterHandler("cancel-interrupted-type");
+			await backgroundTaskService.cancel(taskId);
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Cancelled);
+			expect(store[0].dateCancelled).toBeDefined();
+		});
+
+		test("does not resurrect a task removed while its worker held it", async () => {
+			// The worker's copy of the row is stale once the task is removed, so writing it back
+			// would recreate the row as pending.
+			const backgroundTaskService = makeService({
+				config: { taskInterval: 50, retryInterval: 10_000 }
+			});
+
+			await backgroundTaskService.registerHandler(
+				"removed-while-held-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{ maxWorkerCount: 1, idleShutdownTimeout: -1 }
+			);
+			await backgroundTaskService.start();
+
+			const taskId = await backgroundTaskService.create(
+				"removed-while-held-type",
+				{},
+				{ retainFor: 10_000 }
+			);
+			await waitForStatus(TaskStatus.Processing);
+
+			await backgroundTaskService.remove(taskId);
+			await backgroundTaskService.unregisterHandler("removed-while-held-type");
+
+			expect(await backgroundTaskEntityStorageConnector.getStore()).toHaveLength(0);
+		});
+
+		test("returns tasks left in processing by a previous run to pending at startup", async () => {
+			// Nothing gets to run when a process is killed, so the rows it owned stay in processing
+			// with no worker anywhere.
+			const stuckTask: BackgroundTask = {
+				id: "cc000000000000000000000000000000",
+				type: "killed-process-type",
+				threadId: "main",
+				status: TaskStatus.Processing,
+				payload: { counter: 5 },
+				retainFor: 10_000,
+				dateCreated: new Date(Date.now()).toISOString(),
+				dateModified: new Date(Date.now()).toISOString(),
+				dateNextProcess: new Date(Date.now() + 60_000).toISOString()
+			};
+			await backgroundTaskEntityStorageConnector.set(stuckTask);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.start();
+
+			const store = await backgroundTaskEntityStorageConnector.getStore();
+			expect(store[0].status).toEqual(TaskStatus.Pending);
+			// The backoff it was dispatched with still decides where it sorts.
+			expect(store[0].dateNextProcess).toEqual(stuckTask.dateNextProcess);
+		});
+
+		test("runs the shutdown method on a stalled worker before terminating it", async () => {
+			// A stalled thread is force-terminated, so without this it never releases its resources.
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"stalled-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{
+					executionTimeout: 300,
+					idleShutdownTimeout: -1,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("stalled-type", {}, { retainFor: 10_000 });
+
+			await waitForStatus(TaskStatus.Failed);
+			await waitForCondition(
+				() => shutdownOrder.includes("terminate"),
+				"Timeout waiting for the worker to be terminated"
+			);
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
+		});
+
+		test("asks a stalled worker to shut down only once", async () => {
+			// The idle shutdown and the forced tear-down both want the worker gone, but the
+			// shutdown method should not run twice.
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"stalled-once-type",
+				testModuleUrl(),
+				"testMethodHang",
+				undefined,
+				{
+					executionTimeout: 300,
+					idleShutdownTimeout: 0,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create("stalled-once-type", {}, { retainFor: 10_000 });
+
+			await waitForStatus(TaskStatus.Failed);
+			await waitForCondition(
+				() => shutdownOrder.includes("terminate"),
+				"Timeout waiting for the worker to be terminated"
+			);
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
+		});
+
+		test("runs the shutdown method when a handler is unregistered", async () => {
+			const shutdownOrder: string[] = [];
+			const originalFn = ModuleHelper.execModuleMethodThreadMessage.bind(ModuleHelper);
+
+			vi.spyOn(ModuleHelper, "execModuleMethodThreadMessage").mockImplementation(
+				(module, completed, options) => {
+					const wrappedCompleted = async (
+						operation: string,
+						result?: unknown,
+						err?: Error
+					): Promise<void> => {
+						if (operation === "testMethodShutdown") {
+							shutdownOrder.push("shutdown");
+						}
+						return completed(operation, result, err);
+					};
+					const worker = originalFn(module, wrappedCompleted, options);
+					const originalTerminate = worker.terminate.bind(worker);
+					worker.terminate = vi.fn().mockImplementation(async () => {
+						shutdownOrder.push("terminate");
+						return originalTerminate();
+					});
+					return worker;
+				}
+			);
+
+			const backgroundTaskService = makeService();
+			await backgroundTaskService.registerHandler(
+				"unregister-shutdown-type",
+				testModuleUrl(),
+				"testMethod",
+				undefined,
+				{
+					idleShutdownTimeout: -1,
+					shutdownMethod: "testMethodShutdown"
+				}
+			);
+			await backgroundTaskService.start();
+			await backgroundTaskService.create(
+				"unregister-shutdown-type",
+				{ counter: 0 },
+				{ retainFor: 10_000 }
+			);
+
+			await waitForStatus(TaskStatus.Success);
+			expect(shutdownOrder).toEqual([]);
+
+			await backgroundTaskService.unregisterHandler("unregister-shutdown-type");
+
+			expect(shutdownOrder).toEqual(["shutdown", "terminate"]);
+
+			vi.restoreAllMocks();
 		});
 	});
 });

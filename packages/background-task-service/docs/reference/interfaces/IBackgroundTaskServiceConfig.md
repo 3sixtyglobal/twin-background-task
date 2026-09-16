@@ -45,6 +45,16 @@ before force-terminating them. Defaults to 5000.
 
 ***
 
+### maxDispatchCount? {#maxdispatchcount}
+
+> `optional` **maxDispatchCount?**: `number`
+
+The maximum dispatches of an attempt before the task is failed as interrupted, defaults to 3,
+set to -1 for no limit. Only dispatches that ended without a result count, and the count is
+per process, so a restart resumes the task with a fresh budget.
+
+***
+
 ### overrideHealthCheckHandler? {#overridehealthcheckhandler}
 
 > `optional` **overrideHealthCheckHandler?**: `string`

@@ -81,10 +81,28 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private static readonly _DEFAULT_CLEANUP_INTERVAL: number = 120000;
 
 	/**
+	 * Default maximum number of dispatches for a single attempt.
+	 * @internal
+	 */
+	private static readonly _DEFAULT_MAX_DISPATCH_COUNT: number = 3;
+
+	/**
 	 * The default worker shutdown timeout in milliseconds.
 	 * @internal
 	 */
 	private static readonly _DEFAULT_WORKER_SHUTDOWN_TIMEOUT: number = 5000;
+
+	/**
+	 * Minimum time in milliseconds between maxSystemWorkerCountReached warnings for one type.
+	 * @internal
+	 */
+	private static readonly _CAP_REACHED_LOG_INTERVAL: number = 60000;
+
+	/**
+	 * Cap on the retry wait for a type blocked by the system worker cap.
+	 * @internal
+	 */
+	private static readonly _MAX_CAP_REACHED_WAIT: number = 5000;
 
 	/**
 	 * The timeout in milliseconds for a health-check task to complete.
@@ -136,6 +154,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private readonly _inFlightTaskIds: Map<string, Set<string>>;
 
 	/**
+	 * The dispatch count and last dispatch time for each task, keyed by task id.
+	 * @internal
+	 */
+	private readonly _dispatchCounts: Map<string, { count: number; ts: number }>;
+
+	/**
 	 * The maximum number of concurrent tasks allowed.
 	 * @internal
 	 */
@@ -172,6 +196,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	private readonly _cleanupInterval: number;
 
 	/**
+	 * The maximum dispatches of an attempt before it is failed as interrupted, -1 for no limit.
+	 * @internal
+	 */
+	private readonly _maxDispatchCount: number;
+
+	/**
 	 * How long in milliseconds stop() waits for workers to finish their shutdownMethod before force-terminating them.
 	 * @internal
 	 */
@@ -205,6 +235,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		this._taskHandlers = {};
 		this._workers = {};
 		this._inFlightTaskIds = new Map<string, Set<string>>();
+		this._dispatchCounts = new Map<string, { count: number; ts: number }>();
 		this._started = false;
 		this._lastCleanup = 0;
 		const validationErrors: IValidationFailure[] = [];
@@ -250,6 +281,20 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 				{ minValue: 5000 }
 			);
 		}
+		if (!Is.undefined(options?.config?.maxDispatchCount)) {
+			Guards.integer(
+				BackgroundTaskService.CLASS_NAME,
+				nameof(options.config.maxDispatchCount),
+				options.config.maxDispatchCount
+			);
+			Validation.integer(
+				nameof(options.config.maxDispatchCount),
+				options.config.maxDispatchCount,
+				validationErrors,
+				undefined,
+				{ minValue: -1 }
+			);
+		}
 		Validation.asValidationError(
 			BackgroundTaskService.CLASS_NAME,
 			nameof(options?.config),
@@ -262,6 +307,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			options?.config?.retryInterval ?? BackgroundTaskService._DEFAULT_RETRY_INTERVAL;
 		this._cleanupInterval =
 			options?.config?.cleanupInterval ?? BackgroundTaskService._DEFAULT_CLEANUP_INTERVAL;
+		this._maxDispatchCount =
+			options?.config?.maxDispatchCount ?? BackgroundTaskService._DEFAULT_MAX_DISPATCH_COUNT;
 		this._workerShutdownTimeout =
 			options?.config?.workerShutdownTimeout ??
 			BackgroundTaskService._DEFAULT_WORKER_SHUTDOWN_TIMEOUT;
@@ -289,6 +336,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 
 			await this.cleanupRetained();
 			await this.adoptOrphanedTasks();
+			await this.requeueStaleProcessingTasks();
 
 			for (const taskType of Object.keys(this._taskHandlers)) {
 				await this.processTaskType(taskType);
@@ -304,6 +352,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	public async stop(nodeLoggingComponentType?: string): Promise<void> {
 		if (this._started) {
 			this._started = false;
+			this._dispatchCounts.clear();
 
 			for (const [taskType, taskHandler] of Object.entries(this._taskHandlers)) {
 				// Clear the wait timer so no new tasks are dispatched.
@@ -312,28 +361,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					delete taskHandler.waitTimerId;
 				}
 
-				// Cancel idle timers and send a graceful shutdown message to each worker.
-				// shutdownIdleThread falls through to cleanupWorker immediately when no
-				// shutdownMethod is registered.
-				for (const worker of taskHandler.workers) {
-					if (!Is.undefined(worker.idleTimerId)) {
-						clearTimeout(worker.idleTimerId);
-						delete worker.idleTimerId;
-					}
-					await this.shutdownIdleThread(taskHandler, taskType, worker);
-				}
-
-				// Poll until all workers have self-cleaned via their completed callback,
-				// or until the timeout elapses.
-				const deadline = Date.now() + this._workerShutdownTimeout;
-				while (taskHandler.workers.length > 0 && Date.now() < deadline) {
-					await new Promise(resolve => setTimeout(resolve, 50));
-				}
-
-				// Force-terminate any workers that did not finish in time.
-				for (const worker of taskHandler.workers) {
-					await this.cleanupWorker(taskHandler, worker);
-				}
+				await this.terminateWorkers(taskHandler, taskType, [...taskHandler.workers]);
 			}
 		}
 	}
@@ -348,7 +376,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	 * @param options.maxWorkerCount The maximum number of workers in the pool.
 	 * @param options.idleShutdownTimeout Terminate the thread after it has been idle for the specified timeout in milliseconds, defaults to 0 shutdown immediately, -1 to keep forever.
 	 * @param options.initialiseMethod The initialisation method to call on the module when a worker is started.
+	 * @param options.initialiseMethodParams Callback to provide additional parameters to spread when calling the initialiseMethod.
 	 * @param options.shutdownMethod The shutdown method to call on the module when a worker is stopped.
+	 * @param options.shutdownMethodParams Callback to provide additional parameters to spread when calling the shutdownMethod.
 	 * @param options.executionTimeout Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
 	 * @returns A promise that resolves when the handler is registered and initial task processing begins
 	 */
@@ -361,7 +391,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			maxWorkerCount?: number;
 			idleShutdownTimeout?: number;
 			initialiseMethod?: string;
+			initialiseMethodParams?: () => Promise<unknown[]>;
 			shutdownMethod?: string;
+			shutdownMethodParams?: () => Promise<unknown[]>;
 			executionTimeout?: number;
 		}
 	): Promise<void> {
@@ -386,7 +418,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			processingMethod: method,
 			stateChangeCallback,
 			initialiseMethod: options?.initialiseMethod,
+			initialiseMethodParams: options?.initialiseMethodParams,
 			shutdownMethod: options?.shutdownMethod,
+			shutdownMethodParams: options?.shutdownMethodParams,
 			maxWorkerCount,
 			idleShutdownTimeout,
 			executionTimeout: Coerce.integer(options?.executionTimeout) ?? undefined,
@@ -409,13 +443,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 				clearTimeout(taskHandler.waitTimerId);
 				delete taskHandler.waitTimerId;
 			}
-			for (const worker of taskHandler.workers) {
-				if (!Is.undefined(worker.idleTimerId)) {
-					clearTimeout(worker.idleTimerId);
-					delete worker.idleTimerId;
-				}
-				await this.cleanupWorker(taskHandler, worker);
-			}
+
+			await this.terminateWorkers(taskHandler, taskType, [...taskHandler.workers]);
 		}
 		delete this._taskHandlers[taskType];
 	}
@@ -602,6 +631,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 
 		if (Is.object(task)) {
 			await this._backgroundTaskEntityStorageConnector.remove(urnParsed.namespaceSpecific(1));
+			this._dispatchCounts.delete(task.id);
 		}
 	}
 
@@ -627,6 +657,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		);
 
 		if (Is.object(task) && task.status === TaskStatus.Pending) {
+			this._dispatchCounts.delete(task.id);
 			task.status = TaskStatus.Cancelled;
 			task.dateCancelled = new Date(Date.now()).toISOString();
 			task.dateNextProcess = undefined;
@@ -802,6 +833,28 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					let usedIdle = false;
 					let dispatched = false;
 					try {
+						// The row from getNextTask can be stale, as a slow read can resolve after the task
+						// completed and released its claim. Re-read it now the claim is held, so the
+						// dispatch below cannot resurrect a finished row.
+						const currentTask = await this.revalidateTask(nextTask);
+						if (Is.empty(currentTask)) {
+							this.scheduleNextTaskProcessing(taskType);
+							return;
+						}
+
+						// Bound an attempt that keeps ending without a result. The count is only raised
+						// on dispatch and cleared as soon as an attempt produces a result or an error,
+						// so a non-zero count always means a previous dispatch was interrupted. It is
+						// read rather than the row status, as an interrupted task is put back to pending.
+						if (
+							this._maxDispatchCount > 0 &&
+							(this._dispatchCounts.get(currentTask.id)?.count ?? 0) >= this._maxDispatchCount
+						) {
+							await this.failInterruptedTask(currentTask);
+							this.scheduleNextTaskProcessing(taskType);
+							return;
+						}
+
 						for (const worker of taskHandler.workers) {
 							if (Is.empty(worker.task)) {
 								// Found an idle worker, no need for a new worker
@@ -811,7 +864,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 									clearTimeout(worker.idleTimerId);
 									delete worker.idleTimerId;
 								}
-								await this.workerProcessTasks(taskHandler, worker, taskType, nextTask);
+								await this.workerProcessTasks(taskHandler, worker, taskType, currentTask);
 								usedIdle = true;
 								dispatched = true;
 								break;
@@ -829,21 +882,35 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 									// any more workers right now, we log a warning and schedule
 									// a retry for later
 									if (activeWorkerCount === 0) {
-										// We have reached the system worker limit, so we cannot create
-										// any more workers right now, log a warning
-										await this._logging?.log({
-											level: "warn",
-											source: BackgroundTaskService.CLASS_NAME,
-											ts: Date.now(),
-											message: "maxSystemWorkerCountReached",
-											data: {
-												maxSystemWorkerCount: this._maxSystemWorkerCount,
-												type: taskType
-											}
-										});
+										// Rate-limited to once per _CAP_REACHED_LOG_INTERVAL so a sustained
+										// shortage doesn't flood the log every taskInterval.
+										taskHandler.capReachedCount = (taskHandler.capReachedCount ?? 0) + 1;
 
-										// Schedule a retry for later
-										this.scheduleNextTaskProcessing(taskType);
+										const capReachedNow = Date.now();
+										if (
+											capReachedNow - (taskHandler.capReachedLastLoggedMs ?? 0) >=
+											BackgroundTaskService._CAP_REACHED_LOG_INTERVAL
+										) {
+											taskHandler.capReachedLastLoggedMs = capReachedNow;
+											await this._logging?.log({
+												level: "warn",
+												source: BackgroundTaskService.CLASS_NAME,
+												ts: capReachedNow,
+												message: "maxSystemWorkerCountReached",
+												data: {
+													maxSystemWorkerCount: this._maxSystemWorkerCount,
+													type: taskType,
+													count: taskHandler.capReachedCount
+												}
+											});
+										}
+
+										// Backs off so a type with no worker at all isn't retried every
+										// single taskInterval.
+										this.scheduleNextTaskProcessing(
+											taskType,
+											this.capReachedWaitMs(taskHandler.capReachedCount)
+										);
 									} else {
 										// There is no capacity to process this task right now, but the
 										// task type has active workers, so we just wait for the next processing
@@ -860,7 +927,7 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 										taskType,
 										worker: newWorker
 									};
-									await this.workerProcessTasks(taskHandler, newWorker, taskType, nextTask);
+									await this.workerProcessTasks(taskHandler, newWorker, taskType, currentTask);
 									dispatched = true;
 								}
 							} else {
@@ -882,7 +949,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 							error: BaseError.fromError(err)
 						});
 					} finally {
-						if (!dispatched) {
+						if (dispatched) {
+							// Backoff restarts next time it's blocked; capReachedLastLoggedMs is
+							// left alone so the warning stays rate-limited across episodes too.
+							taskHandler.capReachedCount = undefined;
+						} else {
 							// Claimed above but not dispatched (no worker capacity or dispatch threw);
 							// release the claim so the next processing cycle can pick the task up again.
 							this._inFlightTaskIds.get(taskType)?.delete(nextTask.id);
@@ -929,6 +1000,96 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		// All tasks with processing or pending status should have next process set
 		if (!Is.empty(nextTask) && Is.stringValue(nextTask.dateNextProcess)) {
 			return nextTask;
+		}
+	}
+
+	/**
+	 * Re-read a candidate task so a stale row from a slow query is never dispatched.
+	 * @param candidate The task returned by the selection query.
+	 * @returns The current task if it is still due to be processed, otherwise undefined.
+	 * @internal
+	 */
+	private async revalidateTask(candidate: BackgroundTask): Promise<BackgroundTask | undefined> {
+		const current = await this._backgroundTaskEntityStorageConnector.get(candidate.id);
+
+		// Rejects a task removed, finished, cancelled or rescheduled while the query was in flight.
+		if (
+			Is.object(current) &&
+			(current.status === TaskStatus.Pending || current.status === TaskStatus.Processing) &&
+			Is.stringValue(current.dateNextProcess) &&
+			new Date(current.dateNextProcess).getTime() <= Date.now()
+		) {
+			return current;
+		}
+	}
+
+	/**
+	 * Fail a task whose attempts have repeatedly been interrupted without producing a result.
+	 * @param task The task to fail.
+	 * @returns A promise that resolves when the failure has been persisted and callbacks fired.
+	 * @internal
+	 */
+	private async failInterruptedTask(task: BackgroundTask): Promise<void> {
+		const dispatchCount = this._dispatchCounts.get(task.id)?.count ?? 0;
+		const error = new GeneralError(BackgroundTaskService.CLASS_NAME, "taskInterrupted", {
+			id: task.id,
+			type: task.type,
+			dispatchCount
+		});
+
+		const now = new Date(Date.now()).toISOString();
+		task.status = TaskStatus.Failed;
+		task.error = BaseError.fromError(error).toJsonObject(true);
+		task.dateModified = now;
+		task.dateCompleted = now;
+		task.dateNextProcess = undefined;
+		this._dispatchCounts.delete(task.id);
+
+		await this.processRetention(task);
+
+		await this._logging?.log({
+			level: "error",
+			source: BackgroundTaskService.CLASS_NAME,
+			ts: Date.now(),
+			message: "taskInterrupted",
+			data: {
+				id: task.id,
+				type: task.type,
+				dispatchCount
+			},
+			error: BaseError.fromError(error)
+		});
+
+		await this.fireStateChanged(task);
+	}
+
+	/**
+	 * Drop dispatch counts for tasks that are neither running nor awaiting a re-dispatch.
+	 * @internal
+	 */
+	private pruneDispatchCounts(): void {
+		if (this._dispatchCounts.size === 0) {
+			return;
+		}
+
+		const inFlight = new Set<string>();
+		for (const taskIds of this._inFlightTaskIds.values()) {
+			for (const taskId of taskIds) {
+				inFlight.add(taskId);
+			}
+		}
+
+		// An interrupted task is re-selected within its retry interval, so an entry left untouched
+		// for far longer has no cycle coming for it, usually because its handler was unregistered or
+		// its row was removed elsewhere. The worst case of dropping one too early is a fresh budget.
+		const expiry =
+			Date.now() -
+			Math.max(this._cleanupInterval, this._retryInterval * (this._maxDispatchCount + 1));
+
+		for (const [taskId, dispatch] of this._dispatchCounts) {
+			if (!inFlight.has(taskId) && dispatch.ts < expiry) {
+				this._dispatchCounts.delete(taskId);
+			}
 		}
 	}
 
@@ -994,9 +1155,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					?.getCloneData();
 
 				const currentContextIds = await ContextIdStore.getContextIds();
+				const initialiseParams = Is.function(taskHandler.initialiseMethodParams)
+					? await taskHandler.initialiseMethodParams()
+					: [];
 				worker.module.executeMethod(
 					taskHandler.initialiseMethod,
-					[engineCloneData],
+					[engineCloneData, ...initialiseParams],
 					currentContextIds
 				);
 			}
@@ -1006,8 +1170,21 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		worker.task = nextTask;
 
 		// Immediately set the task to processing to prevent multiple instances of the same task running.
+		const dispatchedAt = Date.now();
 		nextTask.status = TaskStatus.Processing;
-		nextTask.dateModified = new Date(Date.now()).toISOString();
+		nextTask.dateModified = new Date(dispatchedAt).toISOString();
+		// Count the dispatch so repeated interruptions can be bounded, and push the next process time
+		// out so a task left in processing stops sorting ahead of pending work. Nothing is recorded
+		// when the bound is disabled, as the count would never be read or reclaimed.
+		if (this._maxDispatchCount > 0) {
+			this._dispatchCounts.set(nextTask.id, {
+				count: (this._dispatchCounts.get(nextTask.id)?.count ?? 0) + 1,
+				ts: dispatchedAt
+			});
+		}
+		nextTask.dateNextProcess = new Date(
+			dispatchedAt + (nextTask.retryInterval ?? this._retryInterval)
+		).toISOString();
 		await this._backgroundTaskEntityStorageConnector.set(nextTask);
 
 		await this.fireStateChanged(nextTask);
@@ -1057,15 +1234,16 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 					{ id: worker.task.id, type: taskType, timeout: taskHandler.executionTimeout }
 				);
 				await this.taskFinishedProcessing(taskHandler, worker.workerId, undefined, timeoutError);
-				// Force-terminate the hung worker; the thread cannot respond to a graceful
-				// shutdown message, so cleanupWorker is called unconditionally here.
-				await this.cleanupWorker(taskHandler, worker);
+				// Give the stalled worker the chance to run its shutdown method so it can release
+				// any resources it holds, then force-terminate it if it does not respond in time.
+				await this.terminateWorkers(taskHandler, taskType, [worker]);
 			}, taskHandler.executionTimeout);
 		}
 	}
 
 	/**
-	 * Cleanup a worker from the pool.
+	 * Cleanup a worker from the pool, and give any task type backed off by the system worker cap
+	 * an immediate retry now a slot is free.
 	 * @param taskHandler The background task handler.
 	 * @param thread The background task thread.
 	 * @returns A promise that resolves when the worker has been terminated and removed from the pool.
@@ -1077,10 +1255,35 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	): Promise<void> {
 		const worker = this._workers[thread.workerId];
 		if (!Is.empty(worker)) {
-			// If the worker is torn down while still holding a task, release its in-flight
-			// claim so the task can be picked up again (its status is left as-is for resume).
+			// If the worker is torn down while still holding a task, release its in-flight claim
+			// so the task can be picked up again, and put the row back to pending so that
+			// processing always means a worker is running it.
 			if (!Is.empty(thread.task)) {
-				this._inFlightTaskIds.get(worker.taskType)?.delete(thread.task.id);
+				const taskId = thread.task.id;
+				this._inFlightTaskIds.get(worker.taskType)?.delete(taskId);
+
+				if (thread.task.status === TaskStatus.Processing) {
+					try {
+						// Re-read the row, so a task removed or finalised elsewhere while the worker
+						// held it is not resurrected as pending.
+						const current = await this._backgroundTaskEntityStorageConnector.get(taskId);
+						if (Is.object(current) && current.status === TaskStatus.Processing) {
+							await this.requeueTask(current);
+						}
+					} catch (err) {
+						await this._logging?.log({
+							level: "warn",
+							source: BackgroundTaskService.CLASS_NAME,
+							ts: Date.now(),
+							message: "taskRequeueFailed",
+							data: {
+								id: taskId,
+								type: worker.taskType
+							},
+							error: BaseError.fromError(err)
+						});
+					}
+				}
 			}
 			// Remove the thread from the pool
 			if (!Is.empty(taskHandler)) {
@@ -1088,7 +1291,103 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			}
 			// Remove the worker from the worker list
 			delete this._workers[thread.workerId];
+			this.wakeStarvedTaskTypes(taskHandler);
 			await thread.module?.terminate();
+		}
+	}
+
+	/**
+	 * Shutdown the supplied workers, giving each one the chance to run its shutdown method and
+	 * release any resources it holds, before force-terminating the ones that do not respond in time.
+	 * @param taskHandler The background task handler.
+	 * @param taskType The type of the task the workers belong to.
+	 * @param threads The background task threads to terminate.
+	 * @returns A promise that resolves when all the workers have been removed from the pool.
+	 * @internal
+	 */
+	private async terminateWorkers(
+		taskHandler: IBackgroundTaskHandler,
+		taskType: string,
+		threads: IBackgroundTaskWorker[]
+	): Promise<void> {
+		// Cancel the timers and send a graceful shutdown message to each worker.
+		// shutdownIdleThread falls through to cleanupWorker immediately when no
+		// shutdownMethod is registered.
+		for (const thread of threads) {
+			// The worker may already have cleaned itself up, in which case there is nothing
+			// left to ask it to do.
+			if (!Is.empty(this._workers[thread.workerId])) {
+				if (!Is.undefined(thread.idleTimerId)) {
+					clearTimeout(thread.idleTimerId);
+					delete thread.idleTimerId;
+				}
+				if (!Is.undefined(thread.executionTimerId)) {
+					clearTimeout(thread.executionTimerId);
+					delete thread.executionTimerId;
+				}
+				await this.shutdownIdleThread(taskHandler, taskType, thread);
+			}
+		}
+
+		// Poll until all the workers have self-cleaned via their shutdown completed callback,
+		// or until the timeout elapses.
+		const deadline = Date.now() + this._workerShutdownTimeout;
+		while (
+			threads.some(thread => !Is.empty(this._workers[thread.workerId])) &&
+			Date.now() < deadline
+		) {
+			await new Promise(resolve => setTimeout(resolve, 50));
+		}
+
+		// Force-terminate any workers that did not finish in time.
+		for (const thread of threads) {
+			await this.cleanupWorker(taskHandler, thread);
+		}
+	}
+
+	/**
+	 * Put a task back to pending, so its row shows that it is waiting instead of running.
+	 * @param task The task to requeue.
+	 * @returns A promise that resolves when the task has been persisted and callbacks fired.
+	 * @internal
+	 */
+	private async requeueTask(task: BackgroundTask): Promise<void> {
+		const now = new Date(Date.now()).toISOString();
+		task.status = TaskStatus.Pending;
+		task.dateModified = now;
+		// A dispatched task always has a next process time, which is its backoff and decides where
+		// it sorts; without one it would never be selected again, so process it immediately.
+		task.dateNextProcess ??= now;
+		await this._backgroundTaskEntityStorageConnector.set(task);
+
+		await this._logging?.log({
+			level: "info",
+			source: BackgroundTaskService.CLASS_NAME,
+			ts: Date.now(),
+			message: "taskRequeued",
+			data: {
+				id: task.id,
+				type: task.type
+			}
+		});
+
+		await this.fireStateChanged(task);
+	}
+
+	/**
+	 * Give every task type backed off by the system worker cap an immediate retry, as a slot has
+	 * just been released; the backoff stays as the safety net for the ones that lose the race.
+	 * @param releasedFrom The handler whose worker was released, which reschedules itself.
+	 * @internal
+	 */
+	private wakeStarvedTaskTypes(releasedFrom?: IBackgroundTaskHandler): void {
+		if (!this._started) {
+			return;
+		}
+		for (const [taskType, handler] of Object.entries(this._taskHandlers)) {
+			if (handler !== releasedFrom && !Is.undefined(handler.capReachedCount)) {
+				this.scheduleNextTaskProcessing(taskType);
+			}
 		}
 	}
 
@@ -1120,8 +1419,12 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		}
 
 		const taskType = task.type;
+		let finalised = false;
 
 		try {
+			// The attempt produced a result, an error included, so it was not interrupted.
+			this._dispatchCounts.delete(task.id);
+
 			if (Is.empty(err)) {
 				// No error so set the task state to success and clear
 				// any retry information
@@ -1165,6 +1468,9 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			} else {
 				await this.processRetention(task);
 			}
+
+			// The stored row now reflects the outcome, so the claim is safe to release.
+			finalised = true;
 
 			const duration = Date.now() - new Date(task.dateModified).getTime();
 
@@ -1231,9 +1537,24 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			}
 			// Clear the task from the worker so that it can be re-used for the next task
 			worker.worker.task = undefined;
-			// Release the in-flight claim so the task can be re-selected by the next
-			// processing cycle (e.g. a scheduled retry when its status is Pending).
-			this._inFlightTaskIds.get(taskType)?.delete(task.id);
+			if (finalised) {
+				// Release the in-flight claim so the task can be re-selected by the next
+				// processing cycle (e.g. a scheduled retry when its status is Pending).
+				this._inFlightTaskIds.get(taskType)?.delete(task.id);
+			} else {
+				// The write failed so the row is still in processing despite the task having run.
+				// Releasing the claim would let the next cycle run it again, so hold it until restart.
+				await this._logging?.log({
+					level: "warn",
+					source: BackgroundTaskService.CLASS_NAME,
+					ts: Date.now(),
+					message: "taskClaimRetained",
+					data: {
+						id: task.id,
+						type: taskType
+					}
+				});
+			}
 			this.scheduleNextTaskProcessing(taskType);
 		}
 	}
@@ -1241,9 +1562,11 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	/**
 	 * Schedule the next processing cycle for a task type.
 	 * @param taskType The type of the task to schedule.
+	 * @param delayMs The delay in milliseconds before the next cycle, defaults to the configured
+	 * taskInterval.
 	 * @internal
 	 */
-	private scheduleNextTaskProcessing(taskType: string): void {
+	private scheduleNextTaskProcessing(taskType: string, delayMs?: number): void {
 		const taskHandler = this._taskHandlers[taskType];
 		if (Is.empty(taskHandler)) {
 			return;
@@ -1254,8 +1577,24 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		}
 		taskHandler.waitTimerId = setTimeout(
 			async () => this.processTaskType(taskType),
-			this._taskInterval
+			delayMs ?? this._taskInterval
 		);
+	}
+
+	/**
+	 * The retry wait for a type blocked by the system worker cap, doubling per consecutive block
+	 * and clamped between taskInterval and _MAX_CAP_REACHED_WAIT.
+	 * @param consecutiveCount How many consecutive times this type has been blocked.
+	 * @returns The delay in milliseconds.
+	 * @internal
+	 */
+	private capReachedWaitMs(consecutiveCount: number): number {
+		const multiplier = 2 ** Math.max(consecutiveCount - 1, 0);
+		const backedOff = Math.min(
+			this._taskInterval * multiplier,
+			BackgroundTaskService._MAX_CAP_REACHED_WAIT
+		);
+		return Math.max(backedOff, this._taskInterval);
 	}
 
 	/**
@@ -1272,6 +1611,13 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 		thread: IBackgroundTaskWorker
 	): Promise<void> {
 		if (Is.stringValue(taskHandler.shutdownMethod)) {
+			// The shutdown can be requested from the idle timer, a tear-down and stop, but the
+			// worker should only be asked to release its resources once.
+			if (thread.shuttingDown === true) {
+				return;
+			}
+			thread.shuttingDown = true;
+
 			// Call the shutdown method on the worker before terminating
 			// this will trigger the cleanupWorker method when complete
 			await this._logging?.log({
@@ -1285,7 +1631,10 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			});
 			const boundMethod = thread.module?.executeMethod.bind(thread.module);
 			if (Is.function(boundMethod)) {
-				boundMethod(taskHandler.shutdownMethod, []);
+				const shutdownParams = Is.function(taskHandler.shutdownMethodParams)
+					? await taskHandler.shutdownMethodParams()
+					: [];
+				boundMethod(taskHandler.shutdownMethod, shutdownParams);
 			}
 		} else {
 			// No shutdown method, so just cleanup the worker immediately
@@ -1547,11 +1896,51 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 	}
 
 	/**
+	 * Put the tasks this node left in processing back to pending. No worker survives a restart, so
+	 * a row still marked as processing at startup has nothing running it, which would otherwise
+	 * leave it showing as in-flight and block it from being cancelled.
+	 * @returns A promise that resolves when the stale tasks have been requeued
+	 * @internal
+	 */
+	private async requeueStaleProcessingTasks(): Promise<void> {
+		try {
+			const staleTasks: BackgroundTask[] = [];
+			let cursor: string | undefined;
+
+			// Collect the rows before writing any of them, as updating the status they are being
+			// selected on would move the cursor while paging through the results.
+			do {
+				const result = await this.internalQuery(
+					undefined,
+					[TaskStatus.Processing],
+					this.getThreadId(),
+					undefined,
+					undefined,
+					cursor
+				);
+
+				cursor = result.cursor;
+				staleTasks.push(...result.entities);
+			} while (Is.stringValue(cursor));
+
+			for (const task of staleTasks) {
+				await this.requeueTask(task);
+			}
+		} catch {
+			// Best-effort startup recovery; failures here are not fatal.
+		}
+	}
+
+	/**
 	 * Cleanup the retained tasks.
 	 * @returns A promise that resolves when expired retained tasks have been removed
 	 * @internal
 	 */
 	private async cleanupRetained(): Promise<void> {
+		if (!isMainThread) {
+			return;
+		}
+
 		try {
 			const now = Date.now();
 
@@ -1561,6 +1950,8 @@ export class BackgroundTaskService implements IBackgroundTaskComponent, IHealthP
 			}
 
 			this._lastCleanup = now;
+
+			this.pruneDispatchCounts();
 
 			let cursor: string | undefined;
 

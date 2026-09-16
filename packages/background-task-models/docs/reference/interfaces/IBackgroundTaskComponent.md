@@ -72,11 +72,29 @@ Terminate the worker after it has been idle for the specified timeout in millise
 
 The initialisation method to call on the module when a worker is started.
 
+###### initialiseMethodParams?
+
+() => `Promise`\<`unknown`[]\>
+
+Callback to provide additional parameters to spread when calling the initialiseMethod.
+
 ###### shutdownMethod?
 
 `string`
 
 The shutdown method to call on the module when a worker is stopped.
+
+###### shutdownMethodParams?
+
+() => `Promise`\<`unknown`[]\>
+
+Callback to provide additional parameters to spread when calling the shutdownMethod.
+
+###### executionTimeout?
+
+`number`
+
+Maximum time in milliseconds a task may run before it is marked as failed and the worker terminated. Omit for no limit.
 
 #### Returns
 

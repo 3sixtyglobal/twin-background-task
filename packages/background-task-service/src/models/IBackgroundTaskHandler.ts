@@ -28,9 +28,19 @@ export interface IBackgroundTaskHandler {
 	initialiseMethod?: string;
 
 	/**
+	 * Callback to provide additional parameters to spread when calling the initialiseMethod.
+	 */
+	initialiseMethodParams?: () => Promise<unknown[]>;
+
+	/**
 	 * The method to call to shutdown the task handler.
 	 */
 	shutdownMethod?: string;
+
+	/**
+	 * Callback to provide additional parameters to spread when calling the shutdownMethod.
+	 */
+	shutdownMethodParams?: () => Promise<unknown[]>;
 
 	/**
 	 * The maximum number of workers for this task handler.
@@ -56,4 +66,15 @@ export interface IBackgroundTaskHandler {
 	 * The timer used to wait between task executions.
 	 */
 	waitTimerId?: ReturnType<typeof setTimeout>;
+
+	/**
+	 * Consecutive times the system worker cap has blocked this type since it last had a worker of
+	 * its own running.
+	 */
+	capReachedCount?: number;
+
+	/**
+	 * When the maxSystemWorkerCountReached warning was last logged for this type.
+	 */
+	capReachedLastLoggedMs?: number;
 }

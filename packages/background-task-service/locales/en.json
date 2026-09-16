@@ -7,7 +7,8 @@
 			"stateChangeCallbackFailed": "The state change callback failed for task \"{id}\" with type \"{type}\" and status \"{status}\"",
 			"taskFinishedProcessingFailed": "Failed to finalise background task processing for task \"{id}\" with method \"{type}\"",
 			"executionTimeout": "Task \"{id}\" with type \"{type}\" exceeded its execution timeout of {timeout} ms and has been marked as failed",
-			"healthCheckTimeout": "Health check task exceeded its timeout of {timeout} ms and has been marked as failed"
+			"healthCheckTimeout": "Health check task exceeded its timeout of {timeout} ms and has been marked as failed",
+			"taskInterrupted": "Task \"{id}\" with type \"{type}\" was interrupted on each of its {dispatchCount} dispatches and has been marked as failed"
 		}
 	},
 	"info": {
@@ -15,12 +16,15 @@
 			"start": "Processing task \"{id}\" with type \"{type}\"",
 			"complete": "Completed processing task \"{id}\" with type \"{type}\" with status \"{status}\" in {duration} ms",
 			"initialisingWorker": "Initialising worker for task type \"{type}\"",
-			"shutdownWorker": "Shutting down worker for task type \"{type}\""
+			"shutdownWorker": "Shutting down worker for task type \"{type}\"",
+			"taskRequeued": "Task \"{id}\" with type \"{type}\" has no worker running it and has been returned to pending"
 		}
 	},
 	"warn": {
 		"backgroundTaskService": {
-			"maxSystemWorkerCountReached": "The maximum system worker count of {maxSystemWorkerCount} has been reached, can not create any more worker for task type \"{type}\""
+			"maxSystemWorkerCountReached": "The maximum system worker count of {maxSystemWorkerCount} has been reached, can not create any more worker for task type \"{type}\" (consecutive blocks: {count})",
+			"taskClaimRetained": "Task \"{id}\" with type \"{type}\" ran but could not be finalised, it is held until restart so it is not processed twice",
+			"taskRequeueFailed": "Task \"{id}\" with type \"{type}\" could not be returned to pending after its worker was torn down"
 		}
 	}
 }
