@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.11.0](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.11.0...background-task-scheduler-v0.11.0) (2026-09-29)
+
+
+### Features
+
+* release to production ([7ce9896](https://github.com/iotaledger/twin-background-task/commit/7ce989659e6819f05655c86b1bda2a265af5d281))
+* release to production ([#108](https://github.com/iotaledger/twin-background-task/issues/108)) ([e81e733](https://github.com/iotaledger/twin-background-task/commit/e81e73391912cdba5afbf3b04397cd5bd30a5a91))
+* release to production ([#65](https://github.com/iotaledger/twin-background-task/issues/65)) ([ec3ecde](https://github.com/iotaledger/twin-background-task/commit/ec3ecdec162fa341c963f3834d5739da670af058))
+* release to production ([#69](https://github.com/iotaledger/twin-background-task/issues/69)) ([2b31827](https://github.com/iotaledger/twin-background-task/commit/2b318279787beaaca3ba962c4bf397b90665bd0d))
+* release to production ([#73](https://github.com/iotaledger/twin-background-task/issues/73)) ([d31b738](https://github.com/iotaledger/twin-background-task/commit/d31b73887e604751df061fc1ddadc0a6fc28dd78))
+* release to production ([#91](https://github.com/iotaledger/twin-background-task/issues/91)) ([b75ced7](https://github.com/iotaledger/twin-background-task/commit/b75ced714729fe51c779b60dfb5f484f7d52d7f8))
+* release to production [skip ci] ([#126](https://github.com/iotaledger/twin-background-task/issues/126)) ([183bf49](https://github.com/iotaledger/twin-background-task/commit/183bf498e1d84d59d532e2b65edbf86fd474c3be))
+* release to production [skip ci] ([#133](https://github.com/iotaledger/twin-background-task/issues/133)) ([fa3d880](https://github.com/iotaledger/twin-background-task/commit/fa3d88075049984f19da410dcc59a8437ae1a927))
+
 ## [0.10.1-next.1](https://github.com/iotaledger/twin-background-task/compare/background-task-scheduler-v0.10.1-next.0...background-task-scheduler-v0.10.1-next.1) (2026-09-18)
 
 
