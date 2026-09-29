@@ -10,7 +10,7 @@ export class ScheduledTask {
 	/**
 	 * The id.
 	 */
-	@property({ type: "string", isPrimary: true })
+	@property({ type: "string", isPrimary: true, maxLength: 255 })
 	public id!: string;
 
 	/**

@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.10.1-next.1](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.10.1-next.0...background-task-service-v0.10.1-next.1) (2026-09-18)
+
+
+### Features
+
+* add additional logging on failure ([#36](https://github.com/iotaledger/twin-background-task/issues/36)) ([61c3672](https://github.com/iotaledger/twin-background-task/commit/61c3672d446f782959b5c93305147130b314fa01))
+* add custom init and shutdown params ([#111](https://github.com/iotaledger/twin-background-task/issues/111)) ([33d2293](https://github.com/iotaledger/twin-background-task/commit/33d2293a8e2c5bedbb5ad7f300b1223718ae8ace))
+* add multi-threading ([#32](https://github.com/iotaledger/twin-background-task/issues/32)) ([60fb5ef](https://github.com/iotaledger/twin-background-task/commit/60fb5ef55d3f7dc46a27c38d4497812d80b98e3b))
+* cleanup retained only in foreground ([53ba97d](https://github.com/iotaledger/twin-background-task/commit/53ba97d3955fd1aff1f9b7c27f9c13d3a54afbf7))
+* cleanup retained only in foreground ([b456af3](https://github.com/iotaledger/twin-background-task/commit/b456af3b5d56f7b6ce2563314b36a181938b2c50))
+* health methods ([#100](https://github.com/iotaledger/twin-background-task/issues/100)) ([75009e6](https://github.com/iotaledger/twin-background-task/commit/75009e68a06246acc6faaf41ff0e086dae1b189e))
+* improve entity schemas ([#129](https://github.com/iotaledger/twin-background-task/issues/129)) ([9e3a78a](https://github.com/iotaledger/twin-background-task/commit/9e3a78a33f690816d603c75227d528f87b13f4ab))
+* linting and dependency update ([6610f40](https://github.com/iotaledger/twin-background-task/commit/6610f4028724bc687558c95831dd379116a39054))
+* log duration for scheduled and background tasks ([fc52686](https://github.com/iotaledger/twin-background-task/commit/fc52686607354b03afa009264ff1f5ce98f64ecd))
+* remove default logging ([ca9599a](https://github.com/iotaledger/twin-background-task/commit/ca9599aca7ef0375a20e19e0881eaa0e7a2cd7ac))
+* remove engine dependency ([#94](https://github.com/iotaledger/twin-background-task/issues/94)) ([2fbbe25](https://github.com/iotaledger/twin-background-task/commit/2fbbe25f793c44f91de96ac4b5797bbce0de6e0e))
+* switch random ids to uuidv7 ([#41](https://github.com/iotaledger/twin-background-task/issues/41)) ([707b4aa](https://github.com/iotaledger/twin-background-task/commit/707b4aab8c1c852a193b5f97947ffed0dfe15441))
+* typescript 6 update ([e3f2727](https://github.com/iotaledger/twin-background-task/commit/e3f272783e0de7cf4d31f3e84a8e6f5ff633961b))
+* update components ([fd66320](https://github.com/iotaledger/twin-background-task/commit/fd663205bbec282d81a4ec5756a8f332f71d31a9))
+* update dependencies ([0867e02](https://github.com/iotaledger/twin-background-task/commit/0867e02fc3c034f8e8cf5918ac6cc4e6b5ca0c93))
+
+
+### Bug Fixes
+
+* back off and rate-limit the worker-cap retry warning ([#115](https://github.com/iotaledger/twin-background-task/issues/115)) ([1c9bf24](https://github.com/iotaledger/twin-background-task/commit/1c9bf24d6b9f5ec66473d7916b4be1cce0d18183))
+* call terminate() on all worker decommission paths to fix OS thread leak ([#55](https://github.com/iotaledger/twin-background-task/issues/55)) ([3eb1eda](https://github.com/iotaledger/twin-background-task/commit/3eb1eda2f9c7d7343d24c4945c2d595b1959213e))
+* cleanup timers ([a0d30b4](https://github.com/iotaledger/twin-background-task/commit/a0d30b4afc485651ed9f1a3e60ad2f307fa3954a))
+* correct documentation ([10bd65d](https://github.com/iotaledger/twin-background-task/commit/10bd65d38bcf002058d3ce863bae7ffd973c5203))
+* execution timeout ([#86](https://github.com/iotaledger/twin-background-task/issues/86)) ([a6e0efd](https://github.com/iotaledger/twin-background-task/commit/a6e0efd6b6c5167029b5ee12df7d07a7154afbc6))
+* getStore snapshots ([1086de0](https://github.com/iotaledger/twin-background-task/commit/1086de00442d14c91aba306464b807feca7b8770))
+* id full urn ([#83](https://github.com/iotaledger/twin-background-task/issues/83)) ([eba9b6b](https://github.com/iotaledger/twin-background-task/commit/eba9b6bd84b229106c282c43cca9a7555456b074))
+* improve teardown state ([#122](https://github.com/iotaledger/twin-background-task/issues/122)) ([4b7f209](https://github.com/iotaledger/twin-background-task/commit/4b7f20930de91bfe2965bb33ba76037cc0a842a0))
+* missing sort index ([ed7fe44](https://github.com/iotaledger/twin-background-task/commit/ed7fe447f9a3e56db45696a6a4f06dfdd8a31788))
+* prevent BackgroundTaskService from polling tasks when running on a worker thread ([#52](https://github.com/iotaledger/twin-background-task/issues/52)) ([113c475](https://github.com/iotaledger/twin-background-task/commit/113c4754efdd898a68e48831eb8f132893b54aba))
+* prevent duplicate task dispatch on first activity ([#47](https://github.com/iotaledger/twin-background-task/issues/47)) ([a684977](https://github.com/iotaledger/twin-background-task/commit/a6849777adc1493f0ad8cfd11dc5f91bfff8e182))
+* requeue torn down tasks ([#118](https://github.com/iotaledger/twin-background-task/issues/118)) ([adbee87](https://github.com/iotaledger/twin-background-task/commit/adbee87d57797cc55516c85be1e5b83f59ccaf5d))
+* restore task context in background task state-change callbacks ([#46](https://github.com/iotaledger/twin-background-task/issues/46)) ([d4f9f3b](https://github.com/iotaledger/twin-background-task/commit/d4f9f3bb57f8fb83c62024f9a385c81e2d511920))
+* single idle trigger ([#98](https://github.com/iotaledger/twin-background-task/issues/98)) ([eaef7dd](https://github.com/iotaledger/twin-background-task/commit/eaef7dd43ce59bad430eaf31cd5530ed2f6cb4c2))
+* test ([a15ab60](https://github.com/iotaledger/twin-background-task/commit/a15ab60bcb8f54f9a62be95391297efdcccab619))
+* tests ([684e22d](https://github.com/iotaledger/twin-background-task/commit/684e22d10b7369090e132fa40e508d66021f6cbe))
+* use async getStore in tests ([97931cd](https://github.com/iotaledger/twin-background-task/commit/97931cdc856e5748b621148737c2eaa14da217fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @twin.org/background-task-models bumped from 0.10.1-next.0 to 0.10.1-next.1
+
 ## [0.10.0](https://github.com/iotaledger/twin-background-task/compare/background-task-service-v0.10.0...background-task-service-v0.10.0) (2026-09-16)
 
 

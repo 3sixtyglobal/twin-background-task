@@ -13,19 +13,19 @@ export class BackgroundTask {
 	/**
 	 * The id.
 	 */
-	@property({ type: "string", isPrimary: true })
+	@property({ type: "string", isPrimary: true, maxLength: 255 })
 	public id!: string;
 
 	/**
 	 * The type of the task.
 	 */
-	@property({ type: "string", sortDirection: SortDirection.Ascending })
+	@property({ type: "string", maxLength: 128, sortDirection: SortDirection.Ascending })
 	public type!: string;
 
 	/**
 	 * The thread id for the task.
 	 */
-	@property({ type: "string", isSecondary: true })
+	@property({ type: "string", maxLength: 255, isSecondary: true })
 	public threadId!: string;
 
 	/**
@@ -95,7 +95,7 @@ export class BackgroundTask {
 	/**
 	 * The status of the task.
 	 */
-	@property({ type: "string" })
+	@property({ type: "string", maxLength: 16 })
 	public status!: TaskStatus;
 
 	/**
