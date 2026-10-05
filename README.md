@@ -13,3 +13,7 @@ The overall goal is to make background processing easier to integrate and mainta
 ## Contributing
 
 To contribute to this package see the guidelines for building and publishing in [CONTRIBUTING](./CONTRIBUTING.md)
+
+## Origin
+
+This repository is derived from the original [iotaledger/twin-background-task](https://github.com/iotaledger/twin-background-task) repository.

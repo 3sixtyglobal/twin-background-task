@@ -4,7 +4,7 @@
 	"description": "Defines shared contracts and status models for background task workflows",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/iotaledger/twin-background-task.git",
+		"url": "git+https://github.com/3sixtyglobal/twin-background-task.git",
 		"directory": "packages/background-task-models"
 	},
 	"author": "martyn.janes@iota.org",
@@ -79,7 +79,7 @@
 		"schemas"
 	],
 	"bugs": {
-		"url": "git+https://github.com/iotaledger/twin-background-task/issues"
+		"url": "git+https://github.com/3sixtyglobal/twin-background-task/issues"
 	},
 	"homepage": "https://twindev.org"
 }
