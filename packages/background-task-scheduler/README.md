@@ -1,11 +1,11 @@
-# TWIN Background Task Scheduler
+# 3Sixty Background Task Scheduler
 
 This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 
 ```shell
-npm install @twin.org/background-task-scheduler
+npm install @3sixty/background-task-scheduler
 ```
 
 ## Examples

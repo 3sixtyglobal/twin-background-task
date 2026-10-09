@@ -1,4 +1,4 @@
-# @twin.org/background-task-scheduler
+# @3sixty/background-task-scheduler
 
 ## Classes
 

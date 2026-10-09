@@ -1,11 +1,11 @@
-# TWIN Background Task Service
+# 3Sixty Background Task Service
 
 This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 
 ```shell
-npm install @twin.org/background-task-service
+npm install @3sixty/background-task-service
 ```
 
 ## Examples

@@ -5,8 +5,8 @@ Use these snippets to model task payloads, status transitions and scheduler cont
 ## IBackgroundTask
 
 ```typescript
-import type { IBackgroundTask } from '@twin.org/background-task-models';
-import { TaskStatus } from '@twin.org/background-task-models';
+import type { IBackgroundTask } from '@3sixty/background-task-models';
+import { TaskStatus } from '@3sixty/background-task-models';
 
 type ImportPayload = {
   source: string;
@@ -37,8 +37,8 @@ console.log(queuedTask.status); // pending
 ```
 
 ```typescript
-import type { IBackgroundTask } from '@twin.org/background-task-models';
-import { TaskStatus } from '@twin.org/background-task-models';
+import type { IBackgroundTask } from '@3sixty/background-task-models';
+import { TaskStatus } from '@3sixty/background-task-models';
 
 type ImportResult = {
   inserted: number;
@@ -65,8 +65,8 @@ console.log(completedTask.result?.inserted); // 248
 ## IBackgroundTaskComponent
 
 ```typescript
-import type { IBackgroundTask, IBackgroundTaskComponent } from '@twin.org/background-task-models';
-import { TaskStatus } from '@twin.org/background-task-models';
+import type { IBackgroundTask, IBackgroundTaskComponent } from '@3sixty/background-task-models';
+import { TaskStatus } from '@3sixty/background-task-models';
 
 type ResizePayload = {
   imageId: string;
@@ -121,7 +121,7 @@ export async function configureImageHandler(
 ## ITaskSchedulerComponent
 
 ```typescript
-import type { ITaskSchedulerComponent } from '@twin.org/background-task-models';
+import type { ITaskSchedulerComponent } from '@3sixty/background-task-models';
 
 export async function registerDailySync(
   scheduler: ITaskSchedulerComponent,
@@ -148,7 +148,7 @@ export async function registerDailySync(
 ## IScheduledTaskInfo and IScheduledTaskTime
 
 ```typescript
-import type { IScheduledTaskInfo, IScheduledTaskTime } from '@twin.org/background-task-models';
+import type { IScheduledTaskInfo, IScheduledTaskTime } from '@3sixty/background-task-models';
 
 const everyQuarterHour: IScheduledTaskTime = {
   intervalMinutes: 15
@@ -166,8 +166,8 @@ console.log(schedule.tasks['cleanup-cache'][0].intervalMinutes); // 15
 ## TaskStatus
 
 ```typescript
-import type { TaskStatus } from '@twin.org/background-task-models';
-import { TaskStatus as TaskStatuses } from '@twin.org/background-task-models';
+import type { TaskStatus } from '@3sixty/background-task-models';
+import { TaskStatus as TaskStatuses } from '@3sixty/background-task-models';
 
 const terminalStatuses: TaskStatus[] = [
   TaskStatuses.Success,

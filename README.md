@@ -1,4 +1,4 @@
-# TWIN Background Task
+# 3Sixty Background Task
 
 This repository provides a cohesive set of packages for modelling, executing, and scheduling background work in TWIN applications. Together, the packages help teams build dependable asynchronous workflows with consistent contracts and clear operational boundaries.
 

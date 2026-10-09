@@ -4,14 +4,14 @@ import type {
 	IScheduledTaskInfo,
 	IScheduledTaskTime,
 	ITaskSchedulerComponent
-} from "@twin.org/background-task-models";
-import { BaseError, ComponentFactory, Is } from "@twin.org/core";
+} from "@3sixty/background-task-models";
+import { BaseError, ComponentFactory, Is } from "@3sixty/core";
 import {
 	EntityStorageConnectorFactory,
 	type IEntityStorageConnector
-} from "@twin.org/entity-storage-models";
-import type { ILoggingComponent } from "@twin.org/logging-models";
-import { nameof } from "@twin.org/nameof";
+} from "@3sixty/entity-storage-models";
+import type { ILoggingComponent } from "@3sixty/logging-models";
+import { nameof } from "@3sixty/nameof";
 import type { ScheduledTask } from "./entities/scheduledTask.js";
 import type { ITaskSchedulerConstructorOptions } from "./models/ITaskSchedulerConstructorOptions.js";
 

@@ -1,9 +1,9 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
-import type { TaskStatus } from "@twin.org/background-task-models";
-import type { IContextIds } from "@twin.org/context";
-import type { IError } from "@twin.org/core";
-import { entity, property, SortDirection } from "@twin.org/entity";
+import type { TaskStatus } from "@3sixty/background-task-models";
+import type { IContextIds } from "@3sixty/context";
+import type { IError } from "@3sixty/core";
+import { entity, property, SortDirection } from "@3sixty/entity";
 
 /**
  * Class defining a background task.

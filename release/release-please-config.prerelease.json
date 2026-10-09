@@ -10,6 +10,7 @@
 	"versioning": "prerelease",
 	"prerelease": true,
 	"prerelease-type": "next",
+	"last-release-sha": "9db2a7f560fc1c382401cdee2761671524873e51",
 	"packages": {
 		"packages/background-task-models": {
 			"package-name": "background-task-models",

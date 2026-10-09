@@ -1,11 +1,11 @@
-# TWIN Background Task Models
+# 3Sixty Background Task Models
 
 This package is part of the background task toolkit and helps build reliable asynchronous workflows in TWIN applications.
 
 ## Installation
 
 ```shell
-npm install @twin.org/background-task-models
+npm install @3sixty/background-task-models
 ```
 
 ## Examples

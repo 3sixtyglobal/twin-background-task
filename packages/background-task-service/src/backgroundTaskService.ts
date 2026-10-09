@@ -8,13 +8,13 @@ import {
 	type HealthApplicationCallback,
 	type IHealth,
 	type IHealthProviderComponent
-} from "@twin.org/api-models";
+} from "@3sixty/api-models";
 import {
 	type IBackgroundTask,
 	type IBackgroundTaskComponent,
 	TaskStatus
-} from "@twin.org/background-task-models";
-import { ContextIdStore } from "@twin.org/context";
+} from "@3sixty/background-task-models";
+import { ContextIdStore } from "@3sixty/context";
 import {
 	BaseError,
 	Coerce,
@@ -29,20 +29,20 @@ import {
 	StringHelper,
 	Urn,
 	Validation
-} from "@twin.org/core";
+} from "@3sixty/core";
 import {
 	ComparisonOperator,
 	type EntityCondition,
 	LogicalOperator,
 	SortDirection
-} from "@twin.org/entity";
+} from "@3sixty/entity";
 import {
 	EntityStorageConnectorFactory,
 	type IEntityStorageConnector
-} from "@twin.org/entity-storage-models";
-import type { ILoggingComponent } from "@twin.org/logging-models";
-import { ModuleHelper } from "@twin.org/modules";
-import { nameof, nameofCamelCase } from "@twin.org/nameof";
+} from "@3sixty/entity-storage-models";
+import type { ILoggingComponent } from "@3sixty/logging-models";
+import { ModuleHelper } from "@3sixty/modules";
+import { nameof, nameofCamelCase } from "@3sixty/nameof";
 import type { BackgroundTask } from "./entities/backgroundTask.js";
 import type { IBackgroundTaskHandler } from "./models/IBackgroundTaskHandler.js";
 import type { IBackgroundTaskServiceConstructorOptions } from "./models/IBackgroundTaskServiceConstructorOptions.js";

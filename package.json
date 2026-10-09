@@ -1,10 +1,10 @@
 {
-	"name": "@twin.org/background-task",
+	"name": "@3sixty/background-task",
 	"version": "0.0.0",
 	"description": "Packages for modelling, executing, and scheduling background tasks in TWIN applications",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/3sixtyglobal/twin-background-task.git"
+		"url": "git+https://github.com/3sixtyglobal/background-task.git"
 	},
 	"author": "martyn.janes@iota.org",
 	"license": "Apache-2.0",
@@ -35,7 +35,7 @@
 		"quality:no-test": "pnpm run format && concurrently -g -n lint,compile \"pnpm run lint\" \"pnpm run compile\" && pnpm run validate-locales",
 		"docs": "pnpm -r run docs",
 		"package:update-latest": "pnpm update --recursive --interactive --latest",
-		"package:update-framework": "pnpm update --recursive --no-save \"@twin.org/*\"",
+		"package:update-framework": "pnpm update --recursive --no-save \"@3sixty/*\"",
 		"package:update": "pnpm run package:update-latest && pnpm run package:update-framework",
 		"local-link": "node ./scripts/local-link.mjs",
 		"commitlint": "commitlint --edit",
@@ -70,7 +70,7 @@
 	},
 	"type": "module",
 	"bugs": {
-		"url": "git+https://github.com/3sixtyglobal/twin-background-task/issues"
+		"url": "git+https://github.com/3sixtyglobal/background-task/issues"
 	},
-	"homepage": "https://twindev.org"
+	"homepage": "https://3sixty.global"
 }

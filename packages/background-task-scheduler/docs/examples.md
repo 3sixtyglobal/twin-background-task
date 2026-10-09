@@ -5,7 +5,7 @@ Use these snippets to configure recurring schedules and monitor trigger state fo
 ## TaskSchedulerService
 
 ```typescript
-import { TaskSchedulerService } from '@twin.org/background-task-scheduler';
+import { TaskSchedulerService } from '@3sixty/background-task-scheduler';
 
 const scheduler = new TaskSchedulerService({
   config: {
@@ -18,7 +18,7 @@ console.log(scheduler.className()); // TaskSchedulerService
 ```
 
 ```typescript
-import { TaskSchedulerService } from '@twin.org/background-task-scheduler';
+import { TaskSchedulerService } from '@3sixty/background-task-scheduler';
 
 const scheduler = new TaskSchedulerService();
 const taskId = 'report-refresh';
@@ -46,7 +46,7 @@ console.log(info.tasks[taskId].length); // 2
 ```
 
 ```typescript
-import { TaskSchedulerService } from '@twin.org/background-task-scheduler';
+import { TaskSchedulerService } from '@3sixty/background-task-scheduler';
 
 const scheduler = new TaskSchedulerService();
 const taskId = 'cache-prune';
@@ -76,7 +76,7 @@ await scheduler.stop();
 ## ScheduledTask
 
 ```typescript
-import { ScheduledTask } from '@twin.org/background-task-scheduler';
+import { ScheduledTask } from '@3sixty/background-task-scheduler';
 
 const scheduledTask = new ScheduledTask();
 scheduledTask.id = 'nightly-index';
@@ -89,7 +89,7 @@ console.log(typeof scheduledTask.lastRunTime); // number
 ## initSchema
 
 ```typescript
-import { initSchema } from '@twin.org/background-task-scheduler';
+import { initSchema } from '@3sixty/background-task-scheduler';
 
 initSchema();
 ```

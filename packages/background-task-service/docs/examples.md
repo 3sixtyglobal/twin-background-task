@@ -5,7 +5,7 @@ Use these snippets to register workers, queue jobs and manage task lifecycles fr
 ## BackgroundTaskService
 
 ```typescript
-import { BackgroundTaskService } from '@twin.org/background-task-service';
+import { BackgroundTaskService } from '@3sixty/background-task-service';
 
 const taskService = new BackgroundTaskService({
   config: {
@@ -20,9 +20,9 @@ console.log(taskService.className()); // BackgroundTaskService
 ```
 
 ```typescript
-import type { IBackgroundTask } from '@twin.org/background-task-models';
-import { TaskStatus } from '@twin.org/background-task-models';
-import { BackgroundTaskService } from '@twin.org/background-task-service';
+import type { IBackgroundTask } from '@3sixty/background-task-models';
+import { TaskStatus } from '@3sixty/background-task-models';
+import { BackgroundTaskService } from '@3sixty/background-task-service';
 
 type ThumbnailPayload = {
   imageId: string;
@@ -72,9 +72,9 @@ console.log(taskId.startsWith('background-task:entity-storage:')); // true
 ```
 
 ```typescript
-import { TaskStatus } from '@twin.org/background-task-models';
-import { SortDirection } from '@twin.org/entity';
-import { BackgroundTaskService } from '@twin.org/background-task-service';
+import { TaskStatus } from '@3sixty/background-task-models';
+import { SortDirection } from '@3sixty/entity';
+import { BackgroundTaskService } from '@3sixty/background-task-service';
 
 type ThumbnailPayload = {
   imageId: string;
@@ -107,7 +107,7 @@ console.log(page.entities.length); // 1
 ```
 
 ```typescript
-import { BackgroundTaskService } from '@twin.org/background-task-service';
+import { BackgroundTaskService } from '@3sixty/background-task-service';
 
 const taskService = new BackgroundTaskService();
 
@@ -123,7 +123,7 @@ console.log(cancelledTask?.dateCancelled !== undefined); // true
 ```
 
 ```typescript
-import { BackgroundTaskService } from '@twin.org/background-task-service';
+import { BackgroundTaskService } from '@3sixty/background-task-service';
 
 const taskService = new BackgroundTaskService();
 
@@ -145,8 +145,8 @@ await taskService.stop();
 ## BackgroundTask
 
 ```typescript
-import { TaskStatus } from '@twin.org/background-task-models';
-import { BackgroundTask } from '@twin.org/background-task-service';
+import { TaskStatus } from '@3sixty/background-task-models';
+import { BackgroundTask } from '@3sixty/background-task-service';
 
 const now = new Date().toISOString();
 const entity = new BackgroundTask();
@@ -167,7 +167,7 @@ console.log(entity.status); // pending
 ## initSchema
 
 ```typescript
-import { initSchema } from '@twin.org/background-task-service';
+import { initSchema } from '@3sixty/background-task-service';
 
 initSchema();
 ```

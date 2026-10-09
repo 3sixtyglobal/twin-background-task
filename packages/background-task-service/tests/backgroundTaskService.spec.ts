@@ -2,23 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0.
 import os from "node:os";
 import path from "node:path";
-import type { IHealth } from "@twin.org/api-models";
-import type { IBackgroundTask } from "@twin.org/background-task-models";
-import { TaskStatus } from "@twin.org/background-task-models";
-import { ContextIdKeys, ContextIdStore, type IContextIds } from "@twin.org/context";
-import { ComponentFactory, Converter, Factory, Is, RandomHelper } from "@twin.org/core";
+import type { IHealth } from "@3sixty/api-models";
+import type { IBackgroundTask } from "@3sixty/background-task-models";
+import { TaskStatus } from "@3sixty/background-task-models";
+import { ContextIdKeys, ContextIdStore, type IContextIds } from "@3sixty/context";
+import { ComponentFactory, Converter, Factory, Is, RandomHelper } from "@3sixty/core";
 import {
 	EntitySchemaFactory,
 	EntitySchemaHelper,
 	SortDirection,
 	entity,
 	property
-} from "@twin.org/entity";
-import { MemoryEntityStorageConnector } from "@twin.org/entity-storage-connector-memory";
-import { EntityStorageConnectorFactory } from "@twin.org/entity-storage-models";
-import type { ILogEntry } from "@twin.org/logging-models";
-import { ModuleHelper } from "@twin.org/modules";
-import { nameof } from "@twin.org/nameof";
+} from "@3sixty/entity";
+import { MemoryEntityStorageConnector } from "@3sixty/entity-storage-connector-memory";
+import { EntityStorageConnectorFactory } from "@3sixty/entity-storage-models";
+import type { ILogEntry } from "@3sixty/logging-models";
+import { ModuleHelper } from "@3sixty/modules";
+import { nameof } from "@3sixty/nameof";
 import { BackgroundTaskService } from "../src/backgroundTaskService.js";
 import type { BackgroundTask } from "../src/entities/backgroundTask.js";
 import { initSchema } from "../src/schema.js";

@@ -8,6 +8,7 @@
 	"release-type": "node",
 	"initial-version": "0.0.1",
 	"versioning": "default",
+	"last-release-sha": "fb51cda74afb6d3880d84665776241624049053f",
 	"packages": {
 		"packages/background-task-models": {
 			"package-name": "background-task-models",

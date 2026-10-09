@@ -1,7 +1,7 @@
 // Copyright 2024 IOTA Stiftung.
 // SPDX-License-Identifier: Apache-2.0.
 const { threadId } = await import('node:worker_threads');
-const { ContextIdStore } = await import('@twin.org/context');
+const { ContextIdStore } = await import('@3sixty/context');
 
 let moduleCounter = 0;
 
